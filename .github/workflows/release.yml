@@ -27,6 +27,12 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    # Секреты Packagist — на уровне задачи, а не шага: if шага видит env
+    # задачи, но не свой собственный env, и условие по нему было бы ложным
+    # всегда — шаг молча пропускался бы и с заданными секретами.
+    env:
+      PACKAGIST_USERNAME: ${{ secrets.PACKAGIST_USERNAME }}
+      PACKAGIST_TOKEN: ${{ secrets.PACKAGIST_TOKEN }}
     steps:
       - name: Забрать репозиторий
         uses: actions/checkout@v4
@@ -137,9 +143,6 @@ jobs:
       # отставший Packagist догоняется кнопкой Update за десять секунд.
       - name: Обновить пакет на Packagist
         if: env.PACKAGIST_USERNAME != '' && env.PACKAGIST_TOKEN != ''
-        env:
-          PACKAGIST_USERNAME: ${{ secrets.PACKAGIST_USERNAME }}
-          PACKAGIST_TOKEN: ${{ secrets.PACKAGIST_TOKEN }}
         run: |
           # --fail: без него 4xx от Packagist не виден, и шаг зеленеет,
           # ничего не обновив.
