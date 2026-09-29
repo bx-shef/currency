@@ -1,0 +1,29 @@
+{
+	"name": "shef/currency",
+	"description": "Работа с курами валют НБРБ",
+	"keywords": [
+		"Bitrix24",
+		"PHP",
+		"Import",
+		"currency",
+		"НБРБ"
+	],
+	"minimum-stability": "stable",
+	"license": "proprietary",
+	"type": "bitrix-d7-module",
+	"authors": [
+		{
+			"name": "Igor Shevchik",
+			"email": "shevchik.mail@gmail.com"
+		}
+	],
+	"require": {
+		"php": ">=8.1.0",
+		"ext-mbstring": "*",
+		"ext-xmlreader": "*",
+		"shef/options": "^2.2",
+		"shef/uiclear": "^1.1",
+		"shef/problems": "^1.1",
+		"shef/insync": "^1.2"
+	}
+}
