@@ -3,7 +3,7 @@
 /**
  * Настраиваемые параметры модуля
  *
- * * requireModules -> обязательные модулей
+ * * requireModules -> обязательные модули
  * * requirePhpExt -> обязательные расширения PHP
  * * registerAutoLoadClasses -> авто подгрузка классов
  * * registerNamespace -> авто подгрузка Namespace
@@ -11,21 +11,25 @@
  * * installEvents -> события для установки
  * * installDir -> пути установки файлов
  * * controllers -> контроллеры для ajax
- * * ui.entity-selector -> провайдер для диалога выбора сущностей
- * * intranet.customSection -> указывает провайдер страниц левого меню Если нужно использовать из другого модуля - то в installLeftMenu[] указываем moduleId
- * * installLeftMenu -> разделы и страницы в левом меню
  *
- * @memo installLeftMenu[].pages[].settingsRow не серилизовать.
- * @memo installLeftMenu[].code и installLeftMenu[].pages[].code писать без разделителей
- * @memo installLeftMenu[].pages[].settingsRow первый параметр компонет. Остальное смотреть в контроллере intranet.customSection
+ * Классы самого модуля (Shef\Currency\...) в registerNamespace не нужны:
+ * ядро отображает их в lib/ по соглашению. Чужих библиотек у модуля нет.
  *
+ * shef.uiclear в зависимостях до 2.0.0 стоял, но не использовался ни одной
+ * строкой — снят (решение по линейке: штатные возможности Битрикс24).
+ *
+ * simplexml — ответ НБ РБ разбирается им (Main\Rates::parseXml()). До 2.0.0
+ * здесь стоял xmlreader: разбор шёл через трейт shef.insync и его копию
+ * xml-navigator.
+ *
+ * installDir пуст: модуль ничего не раскладывает — кнопка на странице курсов
+ * рисуется обработчиком события, страница настроек — ядром.
  */
 
 return [
 	'requireModules' => [
 		'value' => [
 			'shef.options',
-			'shef.uiclear',
 			'shef.problems',
 			'shef.insync',
 			'currency',
@@ -34,7 +38,7 @@ return [
 	],
 	'requirePhpExt' => [
 		'value' => [
-			'xmlreader',
+			'simplexml',
 		],
 		'readonly' => true,
 	],
@@ -84,7 +88,9 @@ return [
 		'readonly' => true,
 	],
 	'controllers' => [
-		'value' => [],
+		'value' => [
+			'namespaces' => [],
+		],
 		'readonly' => true,
 	]
 ];

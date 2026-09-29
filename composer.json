@@ -1,29 +1,42 @@
 {
-	"name": "shef/currency",
-	"description": "Работа с курами валют НБРБ",
+	"name": "bxshef/currency",
+	"description": "Битрикс24 (коробка) и БУС: курсы валют НБ РБ в модуль «Валюты» — агент раз в сутки и кнопка на странице курсов",
+	"type": "bitrix-module",
+	"license": "MIT",
 	"keywords": [
+		"bitrix",
 		"Bitrix24",
-		"PHP",
-		"Import",
+		"local-module",
 		"currency",
+		"nbrb",
 		"НБРБ"
 	],
-	"minimum-stability": "stable",
-	"license": "proprietary",
-	"type": "bitrix-d7-module",
+	"homepage": "https://github.com/bx-shef/currency",
 	"authors": [
 		{
 			"name": "Igor Shevchik",
-			"email": "shevchik.mail@gmail.com"
+			"email": "offer@bx-shef.by",
+			"homepage": "https://bx-shef.by/"
 		}
 	],
+	"support": {
+		"issues": "https://github.com/bx-shef/currency/issues",
+		"source": "https://github.com/bx-shef/currency"
+	},
+	"minimum-stability": "stable",
 	"require": {
-		"php": ">=8.1.0",
+		"php": ">=8.2.0",
 		"ext-mbstring": "*",
-		"ext-xmlreader": "*",
-		"shef/options": "^2.2",
-		"shef/uiclear": "^1.1",
-		"shef/problems": "^1.1",
-		"shef/insync": "^1.2"
+		"ext-simplexml": "*",
+		"composer/installers": "^1.0 || ^2.0",
+		"bxshef/options": "^3.0",
+		"bxshef/problems": "^2.0",
+		"bxshef/insync": "^2.0"
+	},
+	"extra": {
+		"installer-name": "shef.currency",
+		"branch-alias": {
+			"dev-main": "2.x-dev"
+		}
 	}
 }

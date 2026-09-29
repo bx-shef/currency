@@ -4,18 +4,21 @@ use Bitrix\Main\Localization\Loc;
 use Bitrix\Main\Loader;
 use Shef\Options\Main\Options;
 use Shef\InSync;
+use Shef\Currency\Main\Constants;
 
 /**
  * Опции для страницы настроек
- * 
+ *
  * языковой файл options.php
  *
  * Tab(prefix)->Option(code) ~> код свойства: prefix_code
  */
 
+// indexDoc больше не передаём: вкладка «Документация» ушла из shef.options в
+// 3.0.0 вместе с параметром, и именованный аргумент, которого нет, — это
+// Error «Unknown named parameter», то есть неоткрывающаяся страница настроек.
 $response = ShOptionsConfig::getInstance(
-	moduleId: 'shef.currency',
-	indexDoc: 'README.md'
+	moduleId: 'shef.currency'
 );
 if(!$response->isSuccess())
 {
@@ -35,9 +38,9 @@ $options->addTab(
 			(new Options\RowInfo('DEF_TEXT_BASE_CURRENCY'))
 				->setDescription(Loc::getMessage(
 					(
-					!$resultCheckBaseCurrency->isSuccess()
+						!$resultCheckBaseCurrency->isSuccess()
 						? $options->moduleId.'_DEF_TEXT_BASE_CURRENCY_ERROR'
-						: $options->moduleId.'_DEF_DEF_TEXT_BASE_CURRENCY_SUCCESS'
+						: $options->moduleId.'_DEF_TEXT_BASE_CURRENCY_SUCCESS'
 					),
 					[
 						'#BASE_CURRENCY#' => $resultCheckBaseCurrency->getData()['baseCurrency'],
@@ -54,23 +57,28 @@ $options->addTab(
 			(new Options\NumberInt('sizeChange'))
 				->setTitle(Loc::getMessage($options->moduleId.'_TAB_DEF_sizeChange'))
 				->setDescription(Loc::getMessage($options->moduleId.'_TAB_DEF_sizeChange_descr'))
+				->setMin(0)
+				->setMax(Constants::MAX_SIZE_CHANGE)
+				->setDefValue((string)Constants::DEFAULT_SIZE_CHANGE)
 		)
 		->addOption(
 			(new Options\NumberFloat('factor'))
 				->setTitle(Loc::getMessage($options->moduleId.'_TAB_DEF_factor'))
 				->setDescription(Loc::getMessage($options->moduleId.'_TAB_DEF_factor_descr'))
-				->setMin(1.00)
-				->setMax(400.00)
+				->setMin(0.01)
+				->setMax(Constants::MAX_FACTOR)
 				->setStep(0.01)
+				->setDefValue((string)Constants::DEFAULT_FACTOR)
 		)
 );
 
+// Модуль в зависимостях, но страница настроек открывается и без него —
+// например, если его сняли раньше: тогда вместо кнопки агента — подсказка.
 if(Loader::includeModule('shef.insync'))
 {
-	$agentEntity = \Shef\Currency\Sync\Agent::buildAgentsEntity();
 	$options->getTab('DEF')->addOption(
-		(new Insync\Main\Options\Agent\Option('Agent'))
-			->setAgentEntity($agentEntity)
+		(new InSync\Main\Options\Agent\Option('Agent'))
+			->setAgentEntity(\Shef\Currency\Sync\Agent::buildAgentsEntity())
 	);
 }
 else

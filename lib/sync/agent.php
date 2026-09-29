@@ -3,53 +3,66 @@
 namespace Shef\Currency\Sync;
 
 use Bitrix\Main\ArgumentException;
-use Bitrix\Main\ArgumentNullException;
-use Bitrix\Main\InvalidOperationException;
 use Bitrix\Main\ObjectException;
 use Bitrix\Main\ObjectPropertyException;
 use Bitrix\Main\Result;
 use Bitrix\Main\Error;
-use Bitrix\Main\Localization\Loc;
 use Bitrix\Main\SystemException;
+use Bitrix\Main\Type\Date;
+use Bitrix\Main\Type\DateTime;
 use Bitrix\Currency;
 use Shef\Options\Main\Utils;
-use Shef\Options\Options\SmartStd;
 use Shef\InSync\Agents;
 use Shef\Currency\Main\Constants;
-
-Loc::loadMessages(__FILE__);
+use Shef\Currency\Main\Rates;
 
 /*/
 //title: Shef\Currency\Sync\Agent
 	\Bitrix\Main\Loader::includeModule('shef.currency');
 
 	$response = \Shef\Currency\Sync\Agent::process(['debug' => 'Y']);
-	\Shef\Problems\Logger::PrHtml->getLogger()->debug($response);
+	var_dump($response);
 //*/
-	
+
+/**
+ * Агент курсов НБ РБ: раз в сутки пишет в Б24 курсы на сегодня.
+ *
+ * Обвязка агента — AAgent из shef.insync: подключение модулей, работа от
+ * служебного пользователя, запись сбоя проблемой. Решение, какой курс
+ * писать, — Main\Rates, без ядра.
+ *
+ * Строка агента — \Shef\Currency\Sync\Agent::process([]); — та же, что в
+ * 1.x: агент, поставленный на портале до 2.0.0, находится по имени.
+ */
 class Agent
 	extends Agents\AAgent
 {
 	protected static null|Agents\Entity $agentEntity = null;
-	
-	private array $rates = [];
-	private array $b24Rates = [];
-	private array $b24Currency = [];
-	private null|\Bitrix\Main\Type\Date $syncDate = null;
-	
+
+	/**
+	 * Первый запуск — в 00:20: курсы на новый день НБ РБ устанавливает
+	 * накануне, к полуночи они уже есть.
+	 */
+	public const START_HOUR = 0;
+	public const START_MINUTE = 20;
+
 	public static function getModuleId(): string
 	{
 		return Constants::getModuleId();
 	}
-	
+
 	public static function getAssignedId(): int
 	{
 		return \Shef\Problems\Main\Constants::getSyncUserId();
 	}
-	
+
 	// region Process ////
 	/**
-	 * Создание сущности агента
+	 * Сущность агента; нет агента в b_agent — ставит его выключенным.
+	 * Включают на странице настроек модуля.
+	 *
+	 * Аргументы Entity — по именам: до 2.0.0 id пользователя шёл шестым
+	 * позиционным и попадал в сортировку агента.
 	 *
 	 * @throws ObjectException
 	 */
@@ -58,27 +71,27 @@ class Agent
 		if(null === static::$agentEntity)
 		{
 			static::$agentEntity = new Agents\Entity(
-				Constants::MODULE_ID,
-				static::getClassName().'::process',
-				[],
-				true,
-				86400,
-				static::getContext()->getUserId()
+				module: Constants::getModuleId(),
+				name: static::getClassName().'::process',
+				params: [],
+				isPeriodic: true,
+				period: 86400,
+				userId: static::getContext()->getUserId(),
 			);
 		}
-		
+
 		if(static::$agentEntity->getId() < 1)
 		{
-			$date = new \Bitrix\Main\Type\DateTime();
-			$date->setTime(0, 20, 0);
-			
+			$date = new DateTime();
+			$date->setTime(static::START_HOUR, static::START_MINUTE);
+
 			Agents\Manager::install(static::$agentEntity, $date);
 		}
-		
+
 		return static::$agentEntity;
 	}
 	// endregion ////
-	
+
 	// region Modules ////
 	protected static function getModulesList(): array
 	{
@@ -90,258 +103,263 @@ class Agent
 		);
 	}
 	// endregion ////
-	
+
 	// region Work /////
 	/**
-	 * Используется для дополнительной инициализации объекта агента
-	 *
-	 * @throws ArgumentNullException
-	 * @throws InvalidOperationException
-	 * @throws ArgumentException
-	 * @throws ObjectPropertyException
-	 * @throws SystemException
-	 */
-	protected function init(): void
-	{
-		$this->b24Rates = [];
-		$this->b24Currency = [];
-		
-		$this->initCurrent();
-	}
-	
-	
-	/**
-	 * Обработка курсов из НБРБ и внесение в Б24
-	 *
-	 * @throws ArgumentNullException
-	 * @throws InvalidOperationException
-	 * @throws ArgumentException
-	 * @throws ObjectPropertyException
-	 * @throws SystemException
+	 * Курсы на сегодня.
 	 */
 	public function action(): Result
+	{
+		return $this->sync(new Date());
+	}
+
+	/**
+	 * Что будет записано на дату — без записи.
+	 *
+	 * Тот же путь, что у sync(): базовая валюта, запрос к НБ РБ, курсы
+	 * портала, Rates::plan(). Ничего не пишет — для разбора «почему курс не
+	 * тот» на живом портале. В данных — date, rates (ответ НБ РБ по коду
+	 * валюты) и plan (Rates::plan()).
+	 *
+	 * @throws ArgumentException
+	 * @throws ObjectPropertyException
+	 * @throws SystemException
+	 */
+	public function preview(Date $date): Result
 	{
 		$result = new Result();
 		
 		$response = \Shef\Currency\Main\Utils::checkBaseCurrency();
 		if(!$response->isSuccess())
 		{
-			if($this->isDebug())
-			{
-				$this->debugger->debug($response);
-			}
 			return $result->addErrors($response->getErrors());
 		}
 		
-		$this->syncDate = new \Bitrix\Main\Type\Date();
+		$api = new Api();
+		$api->setIsDebug($this->isDebug());
 		
-		if($this->getParams()->get('mode') === Mode::Tomorrow)
-		{
-			$this->syncDate->add('1D');
-		}
-		
-		$response = $this->getRates();
+		$response = $api->getRates($date);
+		unset($api);
 		if(!$response->isSuccess())
 		{
 			return $result->addErrors($response->getErrors());
 		}
-
-		$this->prepareListRates((array)$response->getData()['list']);
 		
-		$params = new SmartStd();
-		$params->factor = Constants::getFactor();
-		$params->sizeChange = Constants::getSizeChange();
-
-		foreach($this->b24Currency as $currency)
+		$rates = (array)$response->getData()['list'];
+		$currencies = static::getCurrencyList();
+		
+		return $result->setData([
+			'date' => $date->format('Y-m-d'),
+			'rates' => $rates,
+			'plan' => Rates::plan(
+				$rates,
+				$currencies,
+				static::getRatesOnDate($currencies, $date),
+				static::getLastRatesBefore($currencies, $date),
+				Constants::getFactor(),
+				Constants::getSizeChange(),
+				Constants::getModuleBaseCurrency()
+			),
+		]);
+	}
+	
+	/**
+	 * Курсы НБ РБ на дату — в Б24.
+	 *
+	 * Зовут агент (на сегодня) и кнопка на странице курсов (на сегодня или
+	 * на завтра). Что писать — решает preview(). В данных — date и written:
+	 * коды записанных валют.
+	 *
+	 * @throws ArgumentException
+	 * @throws ObjectPropertyException
+	 * @throws SystemException
+	 */
+	public function sync(Date $date): Result
+	{
+		$result = new Result();
+		
+		$response = $this->preview($date);
+		if(!$response->isSuccess())
 		{
-			if(!isset($this->rates[$currency]))
-			{
-				continue;
-			}
-			
-			// region Test Change Rate by proc ////
-			if(
-				(
-					abs($this->rates[$currency]['RATE'] - $this->rates[$currency]['B24']['RATE'])
-					/ $this->rates[$currency]['RATE']
-				) * 100
-				< $params->sizeChange)
-			{
-				continue;
-			}
-			// endregion ////
-			
-			$conf = [
-				'RATE' => $this->rates[$currency]['RATE'] * $params->factor,
-				'RATE_CNT' => $this->rates[$currency]['SCALE'],
-				'CURRENCY' => $currency,
-				'DATE_RATE' => $this->syncDate->format('d.m.Y')
+			return $result->addErrors($response->getErrors());
+		}
+		
+		$plan = $response->getData()['plan'];
+		
+		$written = [];
+		foreach($plan as $row)
+		{
+			$fields = [
+				'CURRENCY' => $row['CURRENCY'],
+				'RATE' => $row['RATE'],
+				'RATE_CNT' => $row['RATE_CNT'],
+				// В формате сайта: ядро сверяет дату с ним. До 2.0.0 здесь
+				// стоял d.m.Y — на сайте с другим форматом курс не писался.
+				'DATE_RATE' => $date->toString(),
 			];
-			
-			if((int)$this->rates[$currency]['B24']['ID'] > 0)
+
+			$isSuccess = $row['ID'] > 0
+				? \CCurrencyRates::Update($row['ID'], $fields)
+				: \CCurrencyRates::Add($fields);
+
+			if(!$isSuccess)
 			{
-				if(!\CCurrencyRates::Update($this->rates[$currency]['B24']['ID'], $conf))
-				{
-					$result->addError(new Error(sprintf(
-						'Error Update Rate %s: %s',
-						$currency,
-						Utils::getCMainApplication()->LAST_ERROR
-					)));
-				}
+				$result->addError(new Error(sprintf(
+					'Error %s rate %s: %s',
+					$row['ID'] > 0 ? 'update' : 'add',
+					$row['CURRENCY'],
+					static::getLastErrorMessage()
+				)));
+				continue;
 			}
-			else
-			{
-				if(!\CCurrencyRates::Add($conf))
-				{
-					$result->addError(new Error(sprintf(
-						'Error Add Rate %s: %s',
-						$currency,
-						Utils::getCMainApplication()->LAST_ERROR
-					)));
-				}
-			}
-			
+
+			$written[] = $row['CURRENCY'];
+
 			if($this->isDebug())
 			{
-				$this->debugger->debug('change '.$currency, [
-					'conf' => $conf
+				$this->debugger->debug('change '.$row['CURRENCY'], [
+					'fields' => $fields,
 				]);
 			}
 		}
-		
+
+		$result->setData([
+			'date' => $date->format('Y-m-d'),
+			'written' => $written,
+		]);
+
 		if($this->isDebug())
 		{
 			$this->debugger->debug($result);
 		}
-		
+
 		return $result;
 	}
-	
+
 	/**
-	 * Получение курсов из НБРБ
-	 *
-	 * @throws ArgumentNullException
-	 * @throws InvalidOperationException
+	 * Текст ошибки ядра: CCurrencyRates кладёт её в исключение приложения.
+	 * До 2.0.0 читался LAST_ERROR, и текст всегда был пуст.
 	 */
-	private function getRates(): Result
+	private static function getLastErrorMessage(): string
 	{
-		$result = new Result();
-		
-		$api = new Api();
-		/*/
-		$api->setIsDebug(true);
-		$api->addOptionCollection('socketTimeout', 10);
-		$api->addOptionCollection('streamTimeout', 10);
-		$api->addOptionCollection('waitResponse', 10);
-		$api->reInitHttpParams();
-		//*/
-		
-		$response = $api->getRates($this->syncDate);
-		unset($api);
-		
-		if(!$response->isSuccess())
-		{
-			return $result->addErrors($response->getErrors());
-		}
-		
-		return $result->setData($response->getData());
+		$exception = Utils::getCMainApplication()?->GetException();
+
+		return $exception instanceof \CApplicationException
+			? (string)$exception->GetString()
+			: 'unknown error';
 	}
-	
+
 	/**
-	 * Разбор пришедших курсов
+	 * Валюты портала.
 	 *
+	 * @return string[]
+	 * @throws ArgumentException
 	 * @throws ObjectPropertyException
 	 * @throws SystemException
-	 * @throws ArgumentException
 	 */
-	private function prepareListRates(array $listRates): void
+	private static function getCurrencyList(): array
 	{
-		$this->initCurrentRates();
-		
-		$this->rates = array_map(function(array $row)
-		{
-			$row['s'] = array_combine(
-				array_column($row['s'], 'n'),
-				array_column($row['s'], 'v')
-			);
-			
-			$currency = $row['s']['CharCode'];
-			
-			return [
-				'NB_RB' => (int)$row['a']['Id'],
-				'CODE' => $currency,
-				'TITLE' => $row['s']['Name'],
-				'NUM_CODE' => $row['s']['NumCode'],
-				'SCALE' => (int)$row['s']['Scale'],
-				'RATE' => (float)$row['s']['Rate'],
-				'B24' => (
-					isset($this->b24Rates[$currency])
-					? [
-						'ID' => (int)$this->b24Rates[$currency]['ID'],
-						'SCALE' => (int)$this->b24Rates[$currency]['RATE_CNT'],
-						'RATE' => (float)$this->b24Rates[$currency]['RATE']
-					]
-					: null
-				)
-			];
-		}, $listRates);
-		
-		$this->rates = array_combine(
-			array_column($this->rates, 'CODE'),
-			$this->rates
+		return array_column(
+			Currency\CurrencyTable::getList([
+				'order' => [
+					'SORT' => 'ASC'
+				],
+				'select' => [
+					'CURRENCY',
+				]
+			])->fetchAll(),
+			'CURRENCY'
 		);
 	}
-	
+
 	/**
-	 * Устанавливает текущие курсы по Б24
-	 * 
+	 * Курсы портала на дату — по коду валюты.
+	 *
+	 * @param string[] $currencies
+	 * @return array<string, array{ID: int, RATE: float, RATE_CNT: int}>
+	 * @throws ArgumentException
 	 * @throws ObjectPropertyException
 	 * @throws SystemException
-	 * @throws ArgumentException
 	 */
-	private function initCurrentRates(): void
+	private static function getRatesOnDate(array $currencies, Date $date): array
 	{
-		$this->b24Rates = Currency\CurrencyRateTable::getList([
-			'order' => [
-				'DATE_RATE' => 'DESC'
-			],
+		if(empty($currencies))
+		{
+			return [];
+		}
+
+		$list = [];
+		$cursor = Currency\CurrencyRateTable::getList([
 			'select' => [
 				'ID',
 				'CURRENCY',
-				'BASE_CURRENCY',
-				'DATE_RATE',
 				'RATE',
 				'RATE_CNT',
 			],
 			'filter' => [
-				'DATE_RATE' => $this->syncDate
-			]
-		])->fetchAll();
-		
-		$this->b24Rates = array_combine(
-			array_column($this->b24Rates, 'CURRENCY'),
-			$this->b24Rates
-		);
+				'@CURRENCY' => $currencies,
+				'=DATE_RATE' => $date,
+			],
+			'order' => [
+				'ID' => 'ASC',
+			],
+		]);
+		while($row = $cursor->fetch())
+		{
+			$list[(string)$row['CURRENCY']] ??= [
+				'ID' => (int)$row['ID'],
+				'RATE' => (float)$row['RATE'],
+				'RATE_CNT' => (int)$row['RATE_CNT'],
+			];
+		}
+
+		return $list;
 	}
-	
+
 	/**
-	 * Получает список валют Б24
-	 * 
+	 * Последние курсы портала до даты — по коду валюты. Их порог колебания
+	 * считает действующими, пока на дату курса нет.
+	 *
+	 * Запрос на валюту, а не один на все: таблица курсов растёт годами, а
+	 * валют на портале единицы.
+	 *
+	 * @param string[] $currencies
+	 * @return array<string, array{RATE: float, RATE_CNT: int}>
+	 * @throws ArgumentException
 	 * @throws ObjectPropertyException
 	 * @throws SystemException
-	 * @throws ArgumentException
 	 */
-	private function initCurrent(): void
+	private static function getLastRatesBefore(array $currencies, Date $date): array
 	{
-		$this->b24Currency = Currency\CurrencyTable::getList([
-			'order' => [
-				'SORT' => 'ASC'
-			],
-			'select' => [
-				'CURRENCY',
-			]
-		])->fetchAll();
-		$this->b24Currency = array_column($this->b24Currency, 'CURRENCY');
+		$list = [];
+		foreach($currencies as $currency)
+		{
+			$row = Currency\CurrencyRateTable::getList([
+				'select' => [
+					'RATE',
+					'RATE_CNT',
+				],
+				'filter' => [
+					'=CURRENCY' => $currency,
+					'<DATE_RATE' => $date,
+				],
+				'order' => [
+					'DATE_RATE' => 'DESC',
+					'ID' => 'DESC',
+				],
+				'limit' => 1,
+			])->fetch();
+
+			if(is_array($row))
+			{
+				$list[(string)$currency] = [
+					'RATE' => (float)$row['RATE'],
+					'RATE_CNT' => (int)$row['RATE_CNT'],
+				];
+			}
+		}
+
+		return $list;
 	}
 	// endregion ////
 }

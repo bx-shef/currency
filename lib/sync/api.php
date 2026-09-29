@@ -3,23 +3,24 @@
 namespace Shef\Currency\Sync;
 
 use Bitrix\Main\ArgumentNullException;
-use Bitrix\Main\InvalidOperationException;
 use Bitrix\Main\Result;
 use Bitrix\Main\Error;
-use Bitrix\Main\Localization\Loc;
+use Bitrix\Main\Type\Date;
 use Bitrix\Main\Web\HttpClient;
 use Shef\Problems;
 use Shef\InSync\Api\AConnector;
-use Shef\InSync\TraitList;
 use Shef\Currency\Main\Constants;
+use Shef\Currency\Main\Rates;
 
-Loc::loadMessages(__FILE__);
-
+/**
+ * Клиент сервиса курсов НБ РБ.
+ *
+ * Запрос и сбои соединения — AConnector из shef.insync: таймауты, запись
+ * проблемы в журнал. Разбор ответа — Main\Rates, без ядра.
+ */
 class Api
 	extends AConnector
 {
-	use TraitList\Xml\ToArray;
-	
 	private const Url = 'https://services.nbrb.by';
 	
 	public static function getModuleId(): string
@@ -52,53 +53,51 @@ class Api
 	
 	// region Actions /////
 	/**
+	 * Курсы НБ РБ на дату.
+	 *
+	 * В данных — list: курсы по коду валюты (Rates::parseXml()). Курсов на
+	 * эту дату у банка нет (завтра — до их установки) — ошибка: пустой
+	 * успешный ответ выглядел бы как «курсы не изменились».
+	 *
 	 * @throws ArgumentNullException
-	 * @throws InvalidOperationException
 	 */
-	public function getRates(\Bitrix\Main\Type\Date $date): Result
+	public function getRates(Date $date): Result
 	{
 		$result = new Result();
 		
-		$conf = [
-			'ondate' => $date->format('m/d/Y'),
-		];
+		$onDate = $date->format(Rates::DATE_FORMAT);
 		
-		$response = $this->sendRequest('/XmlExRates.aspx', $conf, HttpClient::HTTP_GET);
+		$response = $this->sendRequest(
+			'/XmlExRates.aspx',
+			['ondate' => $onDate],
+			HttpClient::HTTP_GET
+		);
 		if(!$response->isSuccess())
 		{
-			$result->addErrors($response->getErrors());
+			return $result->addErrors($response->getErrors());
 		}
 		
-		$list = [];
-		$xml = $response->getData()['data']['response'];
-		if($xml <> '')
+		try
 		{
-			$list = static::ToArrayConvert($xml, 'DailyExRates');
+			$list = Rates::parseXml(
+				(string)($response->getData()['data']['response'] ?? ''),
+				$onDate
+			);
 		}
-		unset($xml);
-		
-		$list = array_filter($list, function($row) use ($conf) {
-			return $row['a']['Date'] === $conf['ondate'];
-		});
-		
-		$dailyExRates = reset($list);
-		if(!is_array($dailyExRates))
+		catch(\UnexpectedValueException $exception)
 		{
-			$listRates = [];
-		}
-		else
-		{
-			$listRates = $dailyExRates['s'];
+			return $result->addError(new Error($exception->getMessage()));
 		}
 		
-		if(!is_array($listRates))
+		if(empty($list))
 		{
-			$listRates = [];
+			return $result->addError(new Error(sprintf(
+				'NB RB: no rates on %s',
+				$date->format('Y-m-d')
+			)));
 		}
-		unset($list, $dailyExRates);
 		
-		return $result->setData(['list' => $listRates]);
+		return $result->setData(['list' => $list]);
 	}
-	
 	// endregion /////
 }

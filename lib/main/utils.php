@@ -8,6 +8,12 @@ use Bitrix\Currency;
 
 class Utils
 {
+	/**
+	 * Базовая валюта портала — BYN?
+	 *
+	 * В данных — обе валюты: baseCurrency (портал) и moduleCurrency (BYN),
+	 * их показывает страница настроек.
+	 */
 	public static function checkBaseCurrency(): Result
 	{
 		$result = new Result();
