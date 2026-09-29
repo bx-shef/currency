@@ -17,7 +17,7 @@
 | Sync\Agent::action | курсы на сегодня: то, что делает агент. Внешний вход агента — `process()` из `AAgent` shef.insync: `['debug' => 'Y']` — ошибки ещё и на экран, возвращает строку агента |
 | Sync\Agent::sync | курсы на дату — в Б24. В данных — `date` и `written`: коды записанных валют |
 | Sync\Agent::preview | то же без записи. В данных — `date`, `rates` (ответ банка) и `plan` (что было бы записано) |
-| Sync\Agent::buildAgentsEntity | сущность агента; нет агента в `b_agent` — ставит выключенным |
+| Sync\Agent::buildAgentsEntity | сущность агента; нет агента в `b_agent` — ставит выключенным, первый запуск — 00:20 следующих суток. `false` — только прочитать |
 | Sync\Api::getRates | курсы НБ РБ на дату; нет курсов на дату — ошибка |
 
 `sync()` и `preview()` — методы объекта:
@@ -37,7 +37,7 @@ $written = $agent->sync((new \Bitrix\Main\Type\Date())->add('1D'));
 
 | метод | что делает |
 |---|---|
-| Main\Rates::parseXml | разбор ответа `XmlExRates.aspx`: курсы по коду валюты; дата ответа не та — пусто; не XML — `UnexpectedValueException` |
+| Main\Rates::parseXml | разбор ответа `XmlExRates.aspx`: курсы по коду валюты; дата ответа не та — пусто; не XML — `UnexpectedValueException`; масштаб и курс больше `MAX_SCALE` / `MAX_RATE` — строка пропускается |
 | Main\Rates::plan | что писать: валюты портала, коэффициент, масштаб, порог |
 | Main\Rates::isChangeEnough | изменение курса за единицу не меньше порога, % |
 
@@ -50,7 +50,7 @@ $written = $agent->sync((new \Bitrix\Main\Type\Date())->add('1D'));
 |---|---|
 | Main\Constants::getFactor | коэффициент из настроек, `1.0` — если не задан или испорчен |
 | Main\Constants::getSizeChange | порог, %, `0` — если не задан или испорчен |
-| Main\Constants::parseFactor | строгий разбор коэффициента: больше 0 и не больше `MAX_FACTOR` |
+| Main\Constants::parseFactor | строгий разбор коэффициента: от `MIN_FACTOR` (1) до `MAX_FACTOR` (400) |
 | Main\Constants::parseSizeChange | строгий разбор порога: целое от 0 до `MAX_SIZE_CHANGE` |
 | Main\Constants::getModuleBaseCurrency | `BYN` |
 | Main\Utils::checkBaseCurrency | базовая валюта портала — BYN? В данных — обе валюты |
@@ -66,4 +66,5 @@ $written = $agent->sync((new \Bitrix\Main\Type\Date())->add('1D'));
 | Sync\Events::canWrite | может ли текущий пользователь писать курсы: «W» и выше на `currency` |
 
 Параметры адреса — константы `Sync\Events`: `PARAM_ACTION` (`getCurrency`),
-`PARAM_TOMORROW` (`tomorrow`), `PARAM_RESULT` (`shefCurrencyResult`).
+`PARAM_TOMORROW` (`tomorrow`), `PARAM_RESULT` (`shefCurrencyResult`: `ok` —
+записаны, `same` — записывать нечего, `fail` — не записаны).

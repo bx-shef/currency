@@ -54,6 +54,8 @@ $given = static function() use ($xml): void
 	TestLogger::$records = [];
 	CurrencyManager::$baseCurrency = 'BYN';
 	Option::$values = [];
+	CCurrencyRates::$rejectSilently = false;
+	\Bitrix\Main\Loader::$missing = [];
 	Date::$today = '2026-09-29';
 	Date::$cultureFormat = 'd.m.Y';
 	$GLOBALS['APPLICATION'] = new CMain();
@@ -70,10 +72,15 @@ $given();
 $entity = Agent::buildAgentsEntity();
 Check::same('строка агента — как в 1.x', $entity->prepareNameForDb(), '\Shef\Currency\Sync\Agent::process([]);');
 Check::same('поставлен один раз', count(Agents\Manager::$installed), 1);
-Check::same('модуль, сортировка по умолчанию, служебный пользователь, 00:20', Agents\Manager::$installed[0], [
+// Первый запуск — 00:20 СЛЕДУЮЩИХ суток: сегодняшние 00:20 уже прошли, и
+// агент сработал бы на первом хите после включения.
+Check::same('раз в сутки, выключен, сортировка по умолчанию, служебный пользователь, завтра в 00:20', Agents\Manager::$installed[0], [
 	'name' => '\Shef\Currency\Sync\Agent::process([]);',
 	'module' => 'shef.currency',
-	'nextExec' => '00:20',
+	'isPeriodic' => true,
+	'period' => 86400,
+	'active' => false,
+	'nextExec' => '2026-09-30 00:20',
 	'sort' => 100,
 	'userId' => 7,
 ]);
@@ -88,6 +95,7 @@ $response = Agent::getInstance()->action();
 Check::same('успех', $response->getErrorMessages(), []);
 Check::same('запрос — на сегодня, дата m/d/Y', AConnector::$requests[0]['url'], 'https://services.nbrb.by/XmlExRates.aspx?ondate=09%2F29%2F2026');
 Check::same('записаны валюты портала, кроме BYN', $response->getData()['written'], ['USD', 'EUR', 'RUB']);
+Check::same('в данных — дата', $response->getData()['date'], '2026-09-29');
 Check::same('в таблице', $rates(), [
 	'2026-09-29 USD 3.0257/1',
 	'2026-09-29 EUR 3.4418/1',
@@ -105,6 +113,34 @@ Check::same('план — тот, что записал бы sync()', array_colu
 Check::same('ответ банка — целиком', count($response->getData()['rates']), 30);
 Check::same('ядро не звали', CCurrencyRates::$calls, []);
 Check::same('в таблице только вчерашний курс', $rates(), ['2026-09-28 USD 3.02/1']);
+Check::same('в данных — дата', $response->getData()['date'], '2026-09-29');
+
+Check::group('действующий курс — последний до даты, а не первый');
+
+$given();
+CurrencyRateTable::add('USD', '2026-01-01', 2.0, 1);
+CurrencyRateTable::add('USD', '2026-09-28', 3.02, 1);
+CurrencyRateTable::add('USD', '2026-05-01', 2.5, 1);
+Option::set('shef.currency', 'DEF_sizeChange', '1');
+// С 3.02 сдвиг 0.19 % — не пишется; с январским 2.0 было бы 51 %.
+Check::same('сравнение — со вчерашним', in_array('USD', array_column(Agent::getInstance()->preview(new Date())->getData()['plan'], 'CURRENCY'), true), false);
+
+$given();
+CurrencyRateTable::add('USD', '2026-09-28', 2.0, 1);
+CurrencyRateTable::add('USD', '2026-09-28', 3.02, 1);
+Option::set('shef.currency', 'DEF_sizeChange', '1');
+Check::same('два курса на один день — действует записанный позже', in_array('USD', array_column(Agent::getInstance()->preview(new Date())->getData()['plan'], 'CURRENCY'), true), false);
+
+Check::group('отладка мимо process()');
+
+// Кнопка и консоль зовут getInstance()->sync() без process(): логгер и
+// отладчик у агента обязаны быть заданы и так.
+$given();
+$agent = Agent::getInstance();
+$agent->setIsDebug(true);
+$response = $agent->sync(new Date());
+Check::same('с отладкой — без fatal, курсы записаны', [$response->isSuccess(), count(CurrencyRateTable::$rows)], [true, 3]);
+Check::same('отладка записана', count(array_filter(TestLogger::$records, static fn(array $record): bool => $record['auditType'] === 'debug')) > 0, true);
 
 Check::group('сайт с другим форматом даты');
 
@@ -160,6 +196,19 @@ $response = Agent::getInstance()->action();
 Check::same('ошибка с текстом ядра', $response->getErrorMessages(), ['Error add rate EUR: Rate rejected']);
 Check::same('остальные записаны', $response->getData()['written'], ['USD', 'RUB']);
 
+$given();
+CurrencyRateTable::add('EUR', '2026-09-29', 3.0, 1);
+CCurrencyRates::$reject = 'EUR';
+$response = Agent::getInstance()->action();
+Check::same('отказ при обновлении — так и назван', $response->getErrorMessages(), ['Error update rate EUR: Rate rejected']);
+
+$given();
+$GLOBALS['APPLICATION']->ThrowException('чужая ошибка из того же хита');
+CCurrencyRates::$reject = 'EUR';
+CCurrencyRates::$rejectSilently = true;
+$response = Agent::getInstance()->action();
+Check::same('чужая ошибка хита в текст не попадает', $response->getErrorMessages(), ['Error add rate EUR: unknown error']);
+
 Check::group('курсов на дату нет');
 
 $given();
@@ -179,6 +228,20 @@ $given();
 AConnector::$responses = [AConnector::answer('<html>502 Bad Gateway</html>')];
 $response = Agent::getInstance()->action();
 Check::same('не курсы — ошибка', $response->getErrorMessages(), ['NB RB: root element is not DailyExRates']);
+
+Check::group('клиент API');
+
+$options = (new \Shef\Currency\Sync\Api())->getHttpOptions();
+Check::same('по переадресации не ходит: адрес сервиса зашит', $options['redirect'] ?? null, false);
+Check::same('тело ответа ограничено', $options['bodyLengthMax'] ?? null, \Shef\Currency\Sync\Api::MAX_BODY_LENGTH);
+
+Check::group('модуль «Валюты» не подключился');
+
+$given();
+\Bitrix\Main\Loader::$missing = ['currency'];
+Check::same('агент остаётся в b_agent', Agent::process(), '\Shef\Currency\Sync\Agent::process([]);');
+Check::same('ничего не записано, в НБ РБ не ходили', [CurrencyRateTable::$rows, AConnector::$requests], [[], []]);
+Check::same('причина — в журнал', TestLogger::$records[0]['message']->getErrorMessages(), ['module currency not loaded']);
 
 Check::group('запуск агентом');
 

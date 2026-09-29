@@ -3,7 +3,7 @@
 # Правят их здесь. sync.sh --to их не трогает, --check сверяет с диском.
 # Пересобрать: .claude/skills/sync.sh --local
 #
-db46dde2b478e922d4d2099cd516274310a2fe8661635b5a4d5aec67d241960e  shef-currency-rates/SKILL.md
+6aa81f792d91b43911d67374a84ed72082908c741be9e13f55f50a6698977c56  shef-currency-rates/SKILL.md
 6263aba5bc1457e2753e36f014750c1db1b1a29c3a993ae9074b9de1405d0b57  shef-currency-rates/evals/selection.json
 75ab18428fe0235f679969a85858d51c7a44afcad94e52dadade557aa9481fd3  shef-new-api-client/SKILL.md
 60d40a9901b048fa13c428254eb5df97b27216262a38dcdb4eb8ee0368cecebd  shef-new-api-client/evals/selection.json

@@ -23,6 +23,12 @@ class Api
 {
 	private const Url = 'https://services.nbrb.by';
 	
+	/**
+	 * Потолок тела ответа: курсы на дату — около 5 КБ. Больше — не ответ
+	 * сервиса курсов, и читать его целиком незачем.
+	 */
+	public const MAX_BODY_LENGTH = 1048576;
+	
 	public static function getModuleId(): string
 	{
 		return Constants::getModuleId();
@@ -34,6 +40,23 @@ class Api
 	}
 	
 	// region Options ////
+	/**
+	 * Клиент без переходов по переадресации. AConnector по умолчанию идёт
+	 * по ним (до 5 раз) на любой хост и схему — а адрес сервиса зашит, и
+	 * переадресация с него на http:// или чужой хост значит не «курсы
+	 * переехали», а подмену: такой ответ — ошибка, а не курсы.
+	 */
+	protected function initHttp(): void
+	{
+		$this->httpClient = new HttpClient([
+			'version' => '1.1',
+			'redirect' => false,
+			'bodyLengthMax' => static::MAX_BODY_LENGTH,
+		]);
+		
+		$this->reInitHttpParams();
+	}
+	
 	/**
 	 * @inheritDoc
 	 */

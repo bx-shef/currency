@@ -15,9 +15,12 @@ Loc::loadMessages(__FILE__);
  * Кнопка «Запросить курсы валют» на странице курсов
  * /bitrix/admin/currencies_rates.php.
  *
- * Обработчики зарегистрированы на каждый хит административной части, а
- * модуль могут снять раньше зависимостей. Поэтому без shef.options или
- * shef.problems класс — пустышка: вызов обработчика не роняет страницу.
+ * Без shef.options или shef.problems класс — пустышка. Сработает она, только
+ * если модуль подключили в обход autoload.php: штатно autoload.php сам
+ * бросает LoaderException на недоступной зависимости из requireModules,
+ * раньше, чем дело дойдёт до этого файла. Так было и в 1.x; снять
+ * зависимость раньше модуля штатно не даёт проверка при удалении
+ * (checkChildModules). См. «Известные шероховатости» в CLAUDE.md.
  */
 
 if(
@@ -57,6 +60,7 @@ class Events
 	public const PARAM_RESULT = 'shefCurrencyResult';
 
 	public const RESULT_OK = 'ok';
+	public const RESULT_SAME = 'same';
 	public const RESULT_FAIL = 'fail';
 
 	// region ProblemsTraitList\LoggerProblems ////
@@ -149,7 +153,8 @@ class Events
 	/**
 	 * Итог запроса — сообщением над списком. До 2.0.0 страница молча
 	 * перезагружалась, и что курсы не записались, было видно только в
-	 * журнале.
+	 * журнале. Итог — из адреса: подделать ссылкой его можно, но показать
+	 * он может только один из трёх текстов языкового файла.
 	 */
 	private static function showResult(): void
 	{
@@ -161,6 +166,13 @@ class Events
 			\CAdminMessage::ShowMessage([
 				'TYPE' => 'OK',
 				'MESSAGE' => Loc::getMessage('shef.currency_RESULT_OK'),
+			]);
+		}
+		elseif($value === static::RESULT_SAME)
+		{
+			\CAdminMessage::ShowMessage([
+				'TYPE' => 'OK',
+				'MESSAGE' => Loc::getMessage('shef.currency_RESULT_SAME'),
 			]);
 		}
 		elseif($value === static::RESULT_FAIL)
@@ -219,8 +231,17 @@ class Events
 			static::createLogger()->error($response);
 		}
 
+		// Успех без записанных валют — порог отсеял всё или валют портала нет
+		// в ответе банка: «записаны» было бы неправдой.
+		$status = match(true)
+		{
+			!$response->isSuccess() => static::RESULT_FAIL,
+			empty($response->getData()['written']) => static::RESULT_SAME,
+			default => static::RESULT_OK,
+		};
+		
 		LocalRedirect($application->GetCurPageParam(
-			static::PARAM_RESULT.'='.($response->isSuccess() ? static::RESULT_OK : static::RESULT_FAIL),
+			static::PARAM_RESULT.'='.$status,
 			$drop
 		));
 	}

@@ -102,6 +102,9 @@ namespace Bitrix\Main\Web
 	{
 		public const HTTP_GET = 'GET';
 		public const HTTP_POST = 'POST';
+
+		/** Параметры, с которыми клиент создан. */
+		public function __construct(public readonly array $options = []) {}
 	}
 }
 
@@ -283,6 +286,11 @@ namespace
 		{
 			return $this->exception;
 		}
+
+		public function ResetException(): void
+		{
+			$this->exception = null;
+		}
 	}
 
 	/**
@@ -297,6 +305,9 @@ namespace
 		/** Валюта, запись которой ядро «отклонит». */
 		public static ?string $reject = null;
 
+		/** Отклонить молча: false без исключения приложения. */
+		public static bool $rejectSilently = false;
+
 		private static function date(array $fields): ?string
 		{
 			$date = \DateTimeImmutable::createFromFormat('!'.\Bitrix\Main\Type\Date::$cultureFormat, (string)($fields['DATE_RATE'] ?? ''));
@@ -308,7 +319,11 @@ namespace
 
 		private static function reject(string $message): false
 		{
-			$GLOBALS['APPLICATION']->ThrowException($message);
+			if(!static::$rejectSilently)
+			{
+				$GLOBALS['APPLICATION']->ThrowException($message);
+			}
+
 			return false;
 		}
 

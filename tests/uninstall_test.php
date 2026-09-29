@@ -8,7 +8,8 @@
  *   обе стороны — Option::delete() работает по модулю, и ошибка в
  *   идентификаторе унесла бы настройки соседа.
  * * savedata = Y оставляет настройки — уговор ядра.
- * * Агент курсов уходит вместе с модулем. В 1.x он оставался в b_agent и
+ * * Агент курсов ставится установщиком — выключенным — и уходит вместе с
+ *   модулем. В 1.x он оставался в b_agent и
  *   после удаления модуля падал на каждом запуске с «class not found».
  * * Обработчики — те же два, что в 1.x, на тот же класс: портал,
  *   обновлённый заменой файлов, держит их регистрацию, и она обязана
@@ -21,7 +22,8 @@
 
 $root = dirname(__DIR__);
 
-require_once $root.'/tests/stub/bitrix.php';
+require_once $root.'/tests/stub/autoload.php';
+require_once $root.'/tests/stub/shef.php';
 require_once $root.'/tests/assert.php';
 
 use Bitrix\Main\Config\Option;
@@ -120,6 +122,15 @@ $given = static function(): shef_currency
 
 	return new shef_currency();
 };
+
+Check::group('установка ставит агент');
+
+$module = $given();
+Check::same('InstallDB отработал', $module->InstallDB(), true);
+Check::same('агент курсов поставлен — выключенным', array_map(
+	static fn(array $agent): array => [$agent['name'], $agent['module'], $agent['active']],
+	\Shef\InSync\Agents\Manager::$installed
+), [['\Shef\Currency\Sync\Agent::process([]);', 'shef.currency', false]]);
 
 Check::group('удаление уносит настройки и агент модуля');
 

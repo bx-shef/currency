@@ -65,10 +65,35 @@ $broken = <<<'XML'
   <Currency Id="4"><NumCode>156</NumCode><CharCode>CNY</CharCode><Scale>10</Scale><Name>Юани</Name><Rate>4,1</Rate></Currency>
   <Currency Id="5"><NumCode>985</NumCode><CharCode>PLN</CharCode><Scale>10</Scale><Name>Злотые</Name><Rate>0</Rate></Currency>
   <Currency Id="6"><NumCode>392</NumCode><CharCode>JPY</CharCode><Scale>100</Scale><Name>Иены</Name></Currency>
+  <Currency Id="7"><NumCode>000</NumCode><CharCode>USDT</CharCode><Scale>1</Scale><Name>Тезер</Name><Rate>3</Rate></Currency>
+  <Currency Id="8"><NumCode>000</NumCode><CharCode>U1S</CharCode><Scale>1</Scale><Name>Цифра</Name><Rate>3</Rate></Currency>
+  <Currency Id="9"><NumCode>704</NumCode><CharCode>VND</CharCode><Scale>99999999999999999999999</Scale><Name>Донги</Name><Rate>1.2</Rate></Currency>
+  <Currency Id="10"><NumCode>826</NumCode><CharCode>GBP</CharCode><Scale>1</Scale><Name>Фунты</Name><Rate>99999999999999999999.5</Rate></Currency>
+  <Currency Id="11"><NumCode>124</NumCode><CharCode>CAD</CharCode><Scale>2000000</Scale><Name>Канадские</Name><Rate>2.1</Rate></Currency>
+  <Currency Id="12"><NumCode>756</NumCode><CharCode>CHF</CharCode><Scale>1</Scale><Name>Франки</Name><Rate>1000000.5</Rate></Currency>
 </DailyExRates>
 XML;
 
+// Число за границами — не курс, а сбой источника: порог его не остановит
+// (он отсекает только малые сдвиги), а масштаб вне колонки RATE_CNT — это
+// ошибка БД.
 Check::same('осталась одна годная', array_keys(Rates::parseXml($broken, '09/29/2026')), ['USD']);
+Check::same('границы вмещают самый крупный масштаб и курс банка', [
+	max(array_column($list, 'SCALE')) <= Rates::MAX_SCALE,
+	max(array_column($list, 'RATE')) <= Rates::MAX_RATE,
+], [true, true]);
+
+Check::group('состояние libxml возвращается');
+
+libxml_use_internal_errors(false);
+try
+{
+	Rates::parseXml('<oops', '09/29/2026');
+}
+catch(UnexpectedValueException)
+{
+}
+Check::same('разбор не оставляет внутренние ошибки libxml включёнными', libxml_use_internal_errors(false), false);
 
 Check::group('ответ — не курсы');
 
@@ -131,6 +156,11 @@ Check::same('сравнение — с коэффициентом', Rates::plan(
 $last = ['RUB' => ['RATE' => 0.035891, 'RATE_CNT' => 1]];
 Check::same('сравнение — за единицу, масштаб не «колебание»', Rates::plan($nb, ['RUB'], [], $last, 1.0, 1, 'BYN'), []);
 
+// Так пишет сам модуль: 3.5891 за 100. Курс портала тоже делится на свой
+// RATE_CNT, иначе на следующий день рубль писался бы при любом пороге.
+$last = ['RUB' => ['RATE' => 3.5891, 'RATE_CNT' => 100]];
+Check::same('масштаб портала тоже учтён', Rates::plan($nb, ['RUB'], [], $last, 1.0, 1, 'BYN'), []);
+
 // Курс на дату важнее последнего до неё.
 $plan = Rates::plan(
 	$nb,
@@ -143,6 +173,8 @@ $plan = Rates::plan(
 );
 Check::same('сравнение — с курсом на дату, если он есть', $plan, []);
 
+Check::same('масштаб 0 — не пишется, деления на ноль нет', Rates::plan(['USD' => ['RATE' => 3.0, 'SCALE' => 0]], ['USD'], [], [], 1.0, 0, 'BYN'), []);
+Check::same('курс, округлённый до нуля, — не пишется', Rates::plan(['USD' => ['RATE' => 0.00001, 'SCALE' => 1]], ['USD'], [], [], 1.0, 0, 'BYN'), []);
 Check::same('базовая валюта не пишется, даже если есть в ответе', Rates::plan(['BYN' => ['RATE' => 1.0, 'SCALE' => 1]], ['BYN'], [], [], 1.0, 0, 'BYN'), []);
 
 Check::finish();

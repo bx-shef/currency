@@ -96,9 +96,12 @@ namespace Bitrix\Main
 			/** @var array<string, string> что зарегистрировал autoload.php */
 			public static array $namespaces = [];
 
+			/** @var string[] модули, которых «нет на портале» */
+			public static array $missing = [];
+
 			public static function includeModule(string $moduleName): bool
 			{
-				return true;
+				return !in_array($moduleName, static::$missing, true);
 			}
 
 			/**

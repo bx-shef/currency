@@ -330,7 +330,8 @@ namespace Shef\InSync\Agents
 	/**
 	 * Сущность агента. Конструктор — с теми же именами и порядком
 	 * аргументов, что в shef.insync 2.x: агент модуля зовёт его по именам,
-	 * и имя, которого нет, здесь — Error, как на портале.
+	 * и имя, которого нет, здесь — Error, как на портале. Свойства —
+	 * закрытые, наружу — геттеры, как в настоящем классе.
 	 */
 	class Entity
 	{
@@ -339,35 +340,31 @@ namespace Shef\InSync\Agents
 
 		private int $id = 0;
 		private Dictionary $params;
+		private int $userId;
 
 		public function __construct(
-			public readonly string $module,
-			public readonly string $name,
+			private string $module,
+			private string $name,
 			array $params,
-			public readonly bool $isPeriodic = true,
-			public readonly int $period = 86400,
-			public readonly int $sort = 100,
-			public readonly ?int $userId = null
+			private bool $isPeriodic = true,
+			private int $period = 86400,
+			private int $sort = 100,
+			?int $userId = null
 		)
 		{
 			$this->params = new Dictionary($params);
+			$this->userId = $userId ?? \Shef\Options\Main\Constants::getSystemUserId();
 			$this->id = static::$agents[$this->prepareNameForDb()] ?? 0;
 		}
 
-		public function getId(): int
-		{
-			return $this->id;
-		}
-
-		public function getName(): string
-		{
-			return $this->name;
-		}
-
-		public function getModule(): string
-		{
-			return $this->module;
-		}
+		final public function getId(): int { return $this->id; }
+		final public function getName(): string { return $this->name; }
+		final public function getModule(): string { return $this->module; }
+		final public function isActive(): bool { return false; }
+		final public function isPeriodic(): bool { return $this->isPeriodic; }
+		final public function getPeriod(): int { return $this->period; }
+		final public function getSort(): int { return $this->sort; }
+		final public function getUserId(): int { return $this->userId; }
 
 		public function setParams(array $params): self
 		{
@@ -376,18 +373,26 @@ namespace Shef\InSync\Agents
 		}
 
 		/** Дословно из shef.insync 2.x: строка агента в b_agent. */
-		public function prepareNameForDb(): string
+		final public function prepareNameForDb(): string
 		{
 			$agentParams = [];
 			foreach($this->params->toArray() as $key => $value)
 			{
+				if(null !== $value && !is_scalar($value))
+				{
+					throw new \Bitrix\Main\ArgumentException(
+						sprintf('Agent param "%s" must be scalar, %s given', $key, get_debug_type($value)),
+						'params'
+					);
+				}
+
 				$agentParams[] = var_export((string)$key, true).'=>'.var_export((string)$value, true);
 			}
 
 			return $this->name.'(['.implode(',', $agentParams).']);';
 		}
 
-		public function reInit(): self
+		final public function reInit(): self
 		{
 			$this->id = static::$agents[$this->prepareNameForDb()] ?? 0;
 			return $this;
@@ -396,9 +401,10 @@ namespace Shef\InSync\Agents
 
 	class Manager
 	{
-		/** @var list<array{name: string, module: string, nextExec: ?string, sort: int, userId: ?int}> */
+		/** @var list<array{name: string, module: string, isPeriodic: bool, period: int, active: bool, nextExec: ?string, sort: int, userId: int}> */
 		public static array $installed = [];
 
+		/** Как в shef.insync 2.x: уже стоит — ничего; иначе CAgent::AddAgent. */
 		public static function install(Entity $agent, ?DateTime $nextExec = null): Result
 		{
 			if($agent->getId() > 0)
@@ -409,9 +415,12 @@ namespace Shef\InSync\Agents
 			static::$installed[] = [
 				'name' => $agent->prepareNameForDb(),
 				'module' => $agent->getModule(),
-				'nextExec' => $nextExec?->format('H:i'),
-				'sort' => $agent->sort,
-				'userId' => $agent->userId,
+				'isPeriodic' => $agent->isPeriodic(),
+				'period' => $agent->getPeriod(),
+				'active' => $agent->isActive(),
+				'nextExec' => $nextExec?->format('Y-m-d H:i'),
+				'sort' => $agent->getSort(),
+				'userId' => $agent->getUserId(),
 			];
 			Entity::$agents[$agent->prepareNameForDb()] = count(static::$installed);
 			$agent->reInit();
@@ -420,6 +429,12 @@ namespace Shef\InSync\Agents
 		}
 	}
 
+	/**
+	 * AAgent shef.insync 2.x — логика process() и конструктора дословно,
+	 * без вывода на экран. Логгер и отладчик конструктор НЕ задаёт: их
+	 * задаёт только process(). Код, который зовёт агент мимо process(),
+	 * обязан позаботиться о них сам — заглушка не должна это скрывать.
+	 */
 	abstract class AAgent
 		extends Singleton
 	{
@@ -430,6 +445,8 @@ namespace Shef\InSync\Agents
 		use TraitList\Security\FixUser;
 		use ProblemsTraitList\LoggerProblems;
 		use ProblemsTraitList\DebuggerProblems;
+
+		private bool $isNeedStop = false;
 
 		private Dictionary $params;
 
@@ -461,19 +478,62 @@ namespace Shef\InSync\Agents
 			];
 		}
 
-		/** Упрощённо: результат — в лог, строка — имя агента. */
 		final public static function process(array $params = []): string
 		{
-			$agent = static::getInstance();
-			$agent->setParams($params)
-				->setIsDebug((string)($params['debug'] ?? '') === 'Y')
-				->configureLogger(static::createLogger())
-				->configureDebugger(static::createDebugger());
+			$result = new Result();
 
-			$response = $agent->action();
+			$logger = static::createLogger();
+			$debugger = static::createDebugger();
+
+			$isDebug = (string)($params['debug'] ?? '') === 'Y';
+			$isNeedStop = false;
+
+			$response = static::includeModules();
 			if(!$response->isSuccess())
 			{
-				static::createLogger()->critical($response);
+				$result->addErrors($response->getErrors());
+			}
+
+			if($result->isSuccess())
+			{
+				try
+				{
+					static::initUser();
+
+					$agent = static::getInstance();
+					$agent->setParams($params)
+						->setIsDebug($isDebug)
+						->configureLogger($logger)
+						->configureDebugger($debugger);
+
+					$response = $agent->action();
+					if(!$response->isSuccess())
+					{
+						$result->addErrors($response->getErrors());
+					}
+					else
+					{
+						$isNeedStop = $agent->isNeedStop();
+					}
+				}
+				catch(\Throwable $throwable)
+				{
+					$result->addError(\Shef\Problems\Throwable\Manager::buildError($throwable, true));
+				}
+				finally
+				{
+					static::closeUser();
+				}
+			}
+
+			if(!$result->isSuccess())
+			{
+				$logger->critical($result);
+			}
+
+			if($isNeedStop)
+			{
+				return '';
 			}
 
 			return static::getName($params);
@@ -484,7 +544,9 @@ namespace Shef\InSync\Agents
 			$entity = static::buildAgentsEntity();
 			unset($params['debug']);
 
-			return $entity->setParams($params)->prepareNameForDb();
+			$entity->setParams($params);
+
+			return $entity->prepareNameForDb();
 		}
 
 		abstract public static function buildAgentsEntity(): Entity;
@@ -494,12 +556,15 @@ namespace Shef\InSync\Agents
 			parent::__construct();
 			$this->params = new Dictionary();
 			$this->initDateTime();
-			$this->initLogger();
-			$this->initDebugger();
 			$this->init();
 		}
 
 		protected function init(): void {}
+
+		final public function isNeedStop(): bool
+		{
+			return $this->isNeedStop;
+		}
 
 		final public function setParams(array $params): self
 		{
@@ -548,11 +613,44 @@ namespace Shef\InSync\Api
 			return \Shef\Problems\Main\Constants::AuditTypeSync;
 		}
 
+		protected null|HttpClient $httpClient = null;
+
+		/** Как в shef.insync 2.x: клиент, логгер, отладчик. */
 		public function __construct()
 		{
 			$this->initOptionCollection();
+
+			$this->initHttp();
 			$this->initLogger();
 			$this->initDebugger();
+		}
+
+		/** Как в shef.insync 2.x: переадресация — да, до пяти раз. */
+		protected function initHttp(): void
+		{
+			$this->httpClient = new HttpClient([
+				'version' => '1.1',
+				'redirect' => true,
+				'redirectMax' => 5,
+			]);
+
+			$this->reInitHttpParams();
+		}
+
+		public function reInitHttpParams(): self
+		{
+			return $this;
+		}
+
+		protected function getHttpClient(): null|HttpClient
+		{
+			return $this->httpClient;
+		}
+
+		/** Только для тестов: с какими параметрами создан клиент. */
+		public function getHttpOptions(): array
+		{
+			return $this->httpClient?->options ?? [];
 		}
 
 		abstract protected function getPath(string $functionName): string;

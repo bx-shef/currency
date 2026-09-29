@@ -33,6 +33,7 @@ define('LANGUAGE_ID', 'ru');
 Loc::loadLangFile($root.'/lang/ru/options.php');
 
 $GLOBALS['APPLICATION'] = new CMain();
+$GLOBALS['APPLICATION']->rights = ['shef.currency' => 'W'];
 
 $build = static function() use ($root): array
 {
@@ -108,6 +109,18 @@ Check::group('агент');
 $agent = $options['Agent'];
 Check::same('строка агента — опция shef.insync', $agent instanceof \Shef\InSync\Main\Options\Agent\Option, true);
 Check::same('агент — курсов', $agent->getAgentEntity()->prepareNameForDb(), '\Shef\Currency\Sync\Agent::process([]);');
-Check::same('страница поставила агент', count(Agents\Manager::$installed), 1);
+Check::same('страница поставила агент тому, кто может менять настройки', count(Agents\Manager::$installed), 1);
+
+// Право «R» — только смотреть: страница строится, агент в b_agent не пишется.
+Agents\Manager::$installed = [];
+Agents\Entity::$agents = [];
+$reflection = new ReflectionProperty(\Shef\Currency\Sync\Agent::class, 'agentEntity');
+$reflection->setValue(null, null);
+$GLOBALS['APPLICATION']->rights = ['shef.currency' => 'R'];
+$readOnly = $byCode($build()[0]);
+Check::same('с правом «R» — строка агента есть, а агент не поставлен', [
+	$readOnly['Agent'] instanceof \Shef\InSync\Main\Options\Agent\Option,
+	Agents\Manager::$installed,
+], [true, []]);
 
 Check::finish();

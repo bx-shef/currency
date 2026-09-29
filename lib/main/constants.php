@@ -23,8 +23,11 @@ class Constants
 	public const DEFAULT_FACTOR = 1.0;
 	
 	/**
-	 * Потолок коэффициента — тот же, что у поля на странице настроек.
+	 * Границы коэффициента — те же, что у поля на странице настроек. Нижняя —
+	 * 1, как в 1.x: коэффициент поднимает курс относительно НБ РБ, а не
+	 * опускает.
 	 */
+	public const MIN_FACTOR = 1.0;
 	public const MAX_FACTOR = 400.0;
 	
 	public static function getModuleId(): string
@@ -80,9 +83,8 @@ class Constants
 	}
 	
 	/**
-	 * Строгий разбор коэффициента: число больше нуля и не больше
-	 * MAX_FACTOR, дробная часть — через точку или запятую. Всё остальное —
-	 * умолчание.
+	 * Строгий разбор коэффициента: число от MIN_FACTOR до MAX_FACTOR,
+	 * дробная часть — через точку или запятую. Всё остальное — умолчание.
 	 *
 	 * До 2.0.0 здесь стоял (float): сохранённая пустая строка давала 0, и
 	 * агент записывал ВСЕ курсы нулями.
@@ -106,7 +108,7 @@ class Constants
 		}
 		
 		$factor = (float)$value;
-		if($factor <= 0 || $factor > static::MAX_FACTOR)
+		if($factor < static::MIN_FACTOR || $factor > static::MAX_FACTOR)
 		{
 			return static::DEFAULT_FACTOR;
 		}

@@ -65,20 +65,27 @@ $options->addTab(
 			(new Options\NumberFloat('factor'))
 				->setTitle(Loc::getMessage($options->moduleId.'_TAB_DEF_factor'))
 				->setDescription(Loc::getMessage($options->moduleId.'_TAB_DEF_factor_descr'))
-				->setMin(0.01)
+				->setMin(Constants::MIN_FACTOR)
 				->setMax(Constants::MAX_FACTOR)
 				->setStep(0.01)
 				->setDefValue((string)Constants::DEFAULT_FACTOR)
 		)
 );
 
-// Модуль в зависимостях, но страница настроек открывается и без него —
-// например, если его сняли раньше: тогда вместо кнопки агента — подсказка.
+// Агента ставит установщик. Страница ставит его, только если его нет, —
+// и только тому, кто может менять настройки модуля: просмотр страницы с
+// правом «R» в b_agent не пишет.
+//
+// Ветка else — на случай, если shef.insync не подключился. Штатно до неё не
+// доходит: без зависимости из requireModules autoload.php бросает
+// LoaderException раньше, и options.php показывает его текст.
 if(Loader::includeModule('shef.insync'))
 {
+	$canWrite = \Shef\Options\Main\Utils::getCMainApplication()?->GetGroupRight($options->moduleId) >= 'W';
+	
 	$options->getTab('DEF')->addOption(
 		(new InSync\Main\Options\Agent\Option('Agent'))
-			->setAgentEntity(\Shef\Currency\Sync\Agent::buildAgentsEntity())
+			->setAgentEntity(\Shef\Currency\Sync\Agent::buildAgentsEntity($canWrite))
 	);
 }
 else

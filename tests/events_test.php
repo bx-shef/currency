@@ -90,6 +90,9 @@ Check::same('фильтр списка сохраняется, прежний и
 $given([], 'R');
 Check::same('с правом чтения кнопки нет', $button(), null);
 
+$given([], 'X');
+Check::same('с полным доступом кнопка есть', ($button()['TEXT'] ?? null) !== null, true);
+
 $given([], 'W', '/bitrix/admin/currencies.php');
 Check::same('на другой странице кнопки нет', $button(), null);
 
@@ -124,6 +127,15 @@ Check::same('итог — в адресе', $click(), Events::PAGE.'?shefCurrenc
 Check::same('на сегодня', AConnector::$requests[0]['url'] ?? null, 'https://services.nbrb.by/XmlExRates.aspx?ondate=09%2F29%2F2026');
 Check::same('курсы записаны', count(CurrencyRateTable::$rows), 3);
 
+$given(['getCurrency' => 'Y', 'sessid' => 'sess-test']);
+\Bitrix\Currency\CurrencyTable::$currencies = ['BYN', 'XXX'];
+Check::same('записывать нечего — так и сказано, а не «записаны»', $click(), Events::PAGE.'?shefCurrencyResult=same');
+\Bitrix\Currency\CurrencyTable::$currencies = ['BYN', 'USD', 'EUR', 'RUB'];
+
+$given(['getCurrency' => 'Y', 'tomorrow' => 'N', 'sessid' => 'sess-test']);
+$click();
+Check::same('tomorrow=N — на сегодня', AConnector::$requests[0]['url'] ?? null, 'https://services.nbrb.by/XmlExRates.aspx?ondate=09%2F29%2F2026');
+
 $given(['getCurrency' => 'Y', 'tomorrow' => 'Y', 'sessid' => 'sess-test']);
 Check::same('на завтра курсов ещё нет — итог «не записано»', $click(), Events::PAGE.'?shefCurrencyResult=fail');
 Check::same('запрос — на завтра', AConnector::$requests[0]['url'] ?? null, 'https://services.nbrb.by/XmlExRates.aspx?ondate=09%2F30%2F2026');
@@ -133,7 +145,14 @@ Check::group('итог на странице');
 
 $given(['shefCurrencyResult' => 'ok']);
 $button();
-Check::same('успех', CAdminMessage::$shown[0]['TYPE'] ?? null, 'OK');
+Check::same('успех — «записаны»', [CAdminMessage::$shown[0]['TYPE'] ?? null, CAdminMessage::$shown[0]['MESSAGE'] ?? null], ['OK', 'Курсы НБ РБ получены и записаны.']);
+
+$given(['shefCurrencyResult' => 'same']);
+$button();
+Check::same('записывать нечего — своим текстом', [
+	CAdminMessage::$shown[0]['TYPE'] ?? null,
+	str_contains((string)(CAdminMessage::$shown[0]['MESSAGE'] ?? ''), 'записывать нечего'),
+], ['OK', true]);
 
 $given(['shefCurrencyResult' => 'fail']);
 $button();

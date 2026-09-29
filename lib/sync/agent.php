@@ -40,8 +40,11 @@ class Agent
 	protected static null|Agents\Entity $agentEntity = null;
 
 	/**
-	 * Первый запуск — в 00:20: курсы на новый день НБ РБ устанавливает
-	 * накануне, к полуночи они уже есть.
+	 * Первый запуск — в 00:20 следующих суток. Курсы на новый день к этому
+	 * времени уже есть: замерено 2026-09-29 около 19:20 по Минску — курсы на
+	 * 30-е сервис уже отдавал. Если нет — сервис отдаёт пустой ответ, и агент
+	 * пишет ошибку в журнал, не молча. 00:20 сегодняшних суток уже прошло
+	 * бы, и агент сработал бы на первом хите после включения.
 	 */
 	public const START_HOUR = 0;
 	public const START_MINUTE = 20;
@@ -58,15 +61,17 @@ class Agent
 
 	// region Process ////
 	/**
-	 * Сущность агента; нет агента в b_agent — ставит его выключенным.
-	 * Включают на странице настроек модуля.
+	 * Сущность агента; нет агента в b_agent и $install — ставит его
+	 * выключенным. Включают на странице настроек модуля. Ставят установщик
+	 * и страница настроек — последняя только тому, кто может менять
+	 * настройки модуля: просмотр страницы в b_agent не пишет.
 	 *
 	 * Аргументы Entity — по именам: до 2.0.0 id пользователя шёл шестым
 	 * позиционным и попадал в сортировку агента.
 	 *
 	 * @throws ObjectException
 	 */
-	public static function buildAgentsEntity(): Agents\Entity
+	public static function buildAgentsEntity(bool $install = true): Agents\Entity
 	{
 		if(null === static::$agentEntity)
 		{
@@ -80,9 +85,10 @@ class Agent
 			);
 		}
 
-		if(static::$agentEntity->getId() < 1)
+		if($install && static::$agentEntity->getId() < 1)
 		{
 			$date = new DateTime();
+			$date->add('1D');
 			$date->setTime(static::START_HOUR, static::START_MINUTE);
 
 			Agents\Manager::install(static::$agentEntity, $date);
@@ -105,6 +111,17 @@ class Agent
 	// endregion ////
 
 	// region Work /////
+	/**
+	 * Логгер и отладчик — сразу. AAgent задаёт их только в process(), а
+	 * sync() и preview() зовут и мимо него — кнопка, консоль: с отладкой
+	 * обращение к незаданному свойству было бы fatal.
+	 */
+	protected function init(): void
+	{
+		$this->initLogger();
+		$this->initDebugger();
+	}
+	
 	/**
 	 * Курсы на сегодня.
 	 */
@@ -198,6 +215,10 @@ class Agent
 				'DATE_RATE' => $date->toString(),
 			];
 
+			// Чужая ошибка приложения из того же хита не должна попасть в
+			// текст этой.
+			Utils::getCMainApplication()?->ResetException();
+			
 			$isSuccess = $row['ID'] > 0
 				? \CCurrencyRates::Update($row['ID'], $fields)
 				: \CCurrencyRates::Add($fields);

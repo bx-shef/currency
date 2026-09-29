@@ -102,6 +102,11 @@ Class shef_currency
 			\Bitrix\Main\Loader::includeModule($this->MODULE_ID);
 			
 			$this->installLeftMenu();
+			
+			// Агент курсов — выключенным: включает администратор на странице
+			// настроек, когда базовая валюта и настройки проверены. Не
+			// встал — поставит страница настроек у того, кто может их менять.
+			\Shef\Currency\Sync\Agent::buildAgentsEntity();
 		}
 		catch(\Throwable $throwable)
 		{
