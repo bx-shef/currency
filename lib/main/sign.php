@@ -10,15 +10,21 @@ use Bitrix\Main\Result;
  * Обозначение белорусского рубля в Битрикс24 (2.1.0): знак НБРБ, «Br» или «BYN».
  *
  * Знак утверждён НБРБ (постановление № 25 от 27.01.2026), кода в Unicode у него нет — его рисует
- * шрифт `nbrb` лигатурой: текст «BYN» в этом шрифте становится знаком. Поэтому «знак» — это
- * формат валюты `# <span class="nbrb-icon">BYN</span>` плюс стили со шрифтом на каждой странице
- * (onPrologHandler). Где Битрикс24 выводит формат текстом или без стилей (выгрузки, письма,
- * уведомления), остаётся «BYN», а не пустой квадрат. Печатные формы — шаблоном с картинкой знака
- * (install/docgen, docs/byn-sign.md).
+ * шрифт `nbrb` лигатурой: текст «BYN» в этом шрифте становится знаком.
  *
- * Формат пишется в CCurrencyLang валюты BYN для каждого активного языка — при установке и со
- * страницы настроек; прежний сохраняется (SYS_prev_<язык>) и возвращается при удалении модуля.
- * Правило — чистые функции parseMode(), formatString(), plan(); ядро — только apply()/restore().
+ * Формат валюты — всегда текст (`# BYN` или `# Br`): он уходит в выгрузки, REST, письма, печатные
+ * формы и мобильное приложение, и HTML там экранируется или ломает данные (правила знака,
+ * references/bitrix24.md). Знак рисуется только на страницах портала: onPrologHandler подключает
+ * стили со шрифтом и скрипт, который оборачивает «BYN» после суммы в `<span class="nbrb-icon">`.
+ * Печатные формы — шаблоном с картинкой знака (install/docgen, docs/byn-sign.md).
+ *
+ * Формат пишется в CCurrencyLang валюты BYN для каждого активного языка: при установке (знак) и
+ * когда администратор сменил настройку (SYS_applied — последний применённый режим; просмотр
+ * страницы настроек без смены ничего не пишет). Прежний формат запоминается при первой записи
+ * (SYS_prev_<язык>) и возвращается при удалении — только если формат всё ещё наш.
+ * Обновление заменой файлов установщик не запускает: обработчик и файлы ставит ensureInstalled()
+ * со страницы настроек. Умолчание — «не менять»: у портала, где модуль обновили, ничего не меняется,
+ * пока администратор не выберет обозначение.
  */
 final class Sign
 {
@@ -27,10 +33,16 @@ final class Sign
 	public const MODE_BR = 'br';
 	public const MODE_CODE = 'code';
 	public const MODE_KEEP = 'keep';
-	public const DEFAULT_MODE = self::MODE_SIGN;
+	/** Умолчание обновлённого портала; новая установка ставит MODE_SIGN явно (InstallDB). */
+	public const DEFAULT_MODE = self::MODE_KEEP;
+	public const INSTALL_MODE = self::MODE_SIGN;
 	public const CSS = '/bitrix/css/shef.currency/byn.css';
+	public const JS = '/bitrix/js/shef.currency/byn.js';
 	public const PREV_PREFIX = 'SYS_prev_';
+	public const APPLIED = 'SYS_applied';
 	public const CLASS_NAME = 'nbrb-icon';
+	/** «Прежнего не было» (локализацию добавил модуль): удаление её не трогает. */
+	public const PREV_NONE = '-';
 
 	/** Строгий разбор настройки: неизвестное и пустое — умолчание. */
 	public static function parseMode(mixed $value): string
@@ -45,22 +57,15 @@ final class Sign
 		return static::parseMode(Option::get(Constants::MODULE_ID, self::OPTION, self::DEFAULT_MODE));
 	}
 
-	/** FORMAT_STRING валюты BYN для режима; «не менять» — null. */
+	/** FORMAT_STRING валюты BYN для режима — всегда текст; «не менять» — null. */
 	public static function formatString(string $mode): ?string
 	{
 		return match ($mode)
 		{
-			self::MODE_SIGN => '# <span class="'.self::CLASS_NAME.'">BYN</span>',
+			self::MODE_SIGN, self::MODE_CODE => '# BYN',
 			self::MODE_BR => '# Br',
-			self::MODE_CODE => '# BYN',
 			default => null,
 		};
-	}
-
-	/** Наш ли это формат (любой из режимов): такой не сохраняем как «прежний». */
-	public static function isOwn(string $format): bool
-	{
-		return in_array($format, array_filter([self::formatString(self::MODE_SIGN), self::formatString(self::MODE_BR), self::formatString(self::MODE_CODE)]), true);
 	}
 
 	/**
@@ -84,18 +89,33 @@ final class Sign
 			{
 				continue;
 			}
-			$keep = ($was !== null && !isset($saved[$lang]) && !static::isOwn($was)) ? $was : null;
+			// Прежний — при первой записи, какой бы он ни был (и «# Br» клиента тоже); локализации не
+			// было — помечаем, чтобы следующая запись не приняла формат модуля за прежний
+			$keep = isset($saved[$lang]) ? null : ($was ?? self::PREV_NONE);
 			$plan[$lang] = ['format' => $format, 'add' => $was === null, 'keep' => $keep];
 		}
 
 		return $plan;
 	}
 
-	/** Записать формат BYN по настройке (или по $mode). Повторный вызов без изменений ничего не пишет. */
-	public static function apply(?string $mode = null): Result
+	/** Нужно ли писать: режим сменился с последнего применения (или запись принудительная). */
+	public static function needApply(string $mode, string $applied, bool $force = false): bool
+	{
+		return $mode !== self::MODE_KEEP && ($force || $mode !== $applied);
+	}
+
+	/**
+	 * Записать формат BYN по настройке. Без смены режима с прошлого раза — ничего (просмотр
+	 * страницы настроек не переписывает формат, поменянный руками); $force — установка модуля.
+	 */
+	public static function apply(bool $force = false): Result
 	{
 		$result = new Result();
-		$mode = $mode === null ? static::mode() : static::parseMode($mode);
+		$mode = static::mode();
+		if(!static::needApply($mode, (string)Option::get(Constants::MODULE_ID, self::APPLIED, ''), $force))
+		{
+			return $result;
+		}
 		if(!static::ready())
 		{
 			return $result->addError(new Error('Модуль «Валюты» или валюта BYN недоступны'));
@@ -126,41 +146,75 @@ final class Sign
 				$result->addError(new Error('Формат BYN не записан для языка '.$lang));
 			}
 		}
+		if($result->isSuccess())
+		{
+			Option::set(Constants::MODULE_ID, self::APPLIED, $mode);
+		}
 		static::clearCache();
 
 		return $result;
 	}
 
-	/** Удаление модуля: вернуть сохранённые прежние форматы; где сохранять было нечего — оставить «# BYN». */
+	/** Удаление модуля: вернуть прежний формат там, где формат всё ещё тот, что записал модуль. */
 	public static function restore(): void
 	{
-		if(!static::ready())
+		$written = static::formatString(static::parseMode(Option::get(Constants::MODULE_ID, self::APPLIED, '')));
+		if($written === null || !static::ready())
 		{
 			return;
 		}
 		foreach(static::languages() as $lang)
 		{
 			$row = \CCurrencyLang::GetByID(Constants::BASE_CURRENCY, $lang);
-			if(!is_array($row) || !static::isOwn((string)$row['FORMAT_STRING']))
-			{
-				continue;
-			}
 			$prev = Option::get(Constants::MODULE_ID, self::PREV_PREFIX.$lang, '');
-			// Знак без стилей модуля — HTML-обёртка вокруг «BYN»: без модуля возвращаем текст
-			$back = $prev !== '' ? $prev : (string)static::formatString(self::MODE_CODE);
-			\CCurrencyLang::Update(Constants::BASE_CURRENCY, $lang, ['FORMAT_STRING' => $back]);
+			if(is_array($row) && (string)$row['FORMAT_STRING'] === $written && $prev !== '' && $prev !== self::PREV_NONE)
+			{
+				\CCurrencyLang::Update(Constants::BASE_CURRENCY, $lang, ['FORMAT_STRING' => $prev]);
+			}
 		}
 		static::clearCache();
 	}
 
-	/** main:OnProlog — стили со шрифтом знака на каждой странице, если выбран «знак». */
+	/**
+	 * Обновление заменой файлов (установщик не запускался): обработчик знака и файлы стилей и скрипта —
+	 * повторяемо. Зовёт страница настроек у того, кто может её менять.
+	 *
+	 * @param string $moduleDir каталог модуля (где install/)
+	 */
+	public static function ensureInstalled(string $moduleDir, string $documentRoot): void
+	{
+		$em = \Bitrix\Main\EventManager::getInstance();
+		$has = false;
+		foreach($em->findEventHandlers('main', 'OnProlog') as $handler)
+		{
+			if(($handler['TO_MODULE_ID'] ?? '') === Constants::MODULE_ID)
+			{
+				$has = true;
+			}
+		}
+		if(!$has)
+		{
+			$em->registerEventHandlerCompatible('main', 'OnProlog', Constants::MODULE_ID, '\\'.self::class, 'onPrologHandler');
+		}
+		foreach(['/install/css' => '/bitrix/css', '/install/js' => '/bitrix/js'] as $from => $to)
+		{
+			if(!is_file($documentRoot.($from === '/install/css' ? self::CSS : self::JS)) && is_dir($moduleDir.$from) && function_exists('CopyDirFiles'))
+			{
+				\CopyDirFiles($moduleDir.$from, $documentRoot.$to, true, true);
+			}
+		}
+	}
+
+	/** main:OnProlog — стили со шрифтом и скрипт знака на страницах, если выбран «знак». */
 	public static function onPrologHandler(): void
 	{
 		try
 		{
 			if(static::mode() === self::MODE_SIGN && class_exists(\Bitrix\Main\Page\Asset::class))
 			{
-				\Bitrix\Main\Page\Asset::getInstance()->addCss(self::CSS);
+				$asset = \Bitrix\Main\Page\Asset::getInstance();
+				$asset->addCss(self::CSS);
+				$asset->addJs(self::JS);
 			}
 		}
 		catch(\Throwable)

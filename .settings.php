@@ -22,8 +22,9 @@
  * здесь стоял xmlreader: разбор шёл через трейт shef.insync и его копию
  * xml-navigator.
  *
- * installDir — стили и шрифт знака белорусского рубля (2.1.0): install/css/shef.currency
- * → /bitrix/css/shef.currency (каталог модуля браузеру закрыт). Подключает их обработчик
+ * installDir — знак белорусского рубля (2.1.0): стили и шрифт install/css/shef.currency
+ * → /bitrix/css/shef.currency, скрипт install/js/shef.currency → /bitrix/js/shef.currency
+ * (каталог модуля браузеру закрыт). Подключает их обработчик
  * main:OnProlog (Main\Sign), когда обозначение BYN — «знак».
  */
 
@@ -102,6 +103,13 @@ return [
 				'type' => 'css',
 				'from' => '/install/css',
 				'to' => '/bitrix/css',
+				'customPathUnInstall' => [],
+				'isNeedUnInstall' => true,
+			],
+			[
+				'type' => 'js',
+				'from' => '/install/js',
+				'to' => '/bitrix/js',
 				'customPathUnInstall' => [],
 				'isNeedUnInstall' => true,
 			],

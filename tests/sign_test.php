@@ -5,13 +5,14 @@
  *
  * Что держит:
  *
- * * разбор настройки строгий: неизвестное и пустое — знак (умолчание, как в default_option.php);
- * * формат знака — «BYN» в обёртке со шрифтом НБРБ: без стилей остаётся «BYN», а не квадрат;
- * * прежний формат запоминается один раз и не своим: повторное применение и смена режима
- *   не затирают исходный формат портала, который вернётся при удалении;
- * * удаление возвращает прежний; где прежнего нет — «BYN» (знак без стилей модуля — HTML);
- * * «не менять» ничего не пишет; без изменений ничего не пишется;
- * * стили подключаются только при «знаке».
+ * * формат валюты — всегда текст («# BYN», «# Br»): HTML в нём экранировался бы в выгрузках, REST,
+ *   письмах (правила знака); знак рисуют стили и скрипт на страницах;
+ * * разбор настройки строгий; умолчание — «не менять» (обновлённый заменой файлов портал не трогаем);
+ * * пишется только при смене режима с прошлого применения: просмотр страницы настроек формат,
+ *   поменянный руками, не переписывает; установка — принудительно;
+ * * прежний формат запоминается при первой записи любым (и «# Br» клиента), не перезаписывается;
+ * * удаление возвращает прежний, только если формат всё ещё записанный модулем;
+ * * стили и скрипт — только при «знаке»; обработчик и файлы для обновления заменой — повторяемо.
  */
 
 namespace
@@ -20,117 +21,111 @@ namespace
 
 	require_once $root.'/tests/stub/autoload.php';
 	require_once $root.'/tests/stub/currency.php';
+	require_once $root.'/tests/stub/currencylang.php';
 	require_once $root.'/tests/assert.php';
 
-	/** Валюты портала: есть ли BYN. */
-	class CCurrency
-	{
-		public static bool $hasByn = true;
-
-		public static function GetByID(string $id): array|false
-		{
-			return $id === 'BYN' && static::$hasByn ? ['CURRENCY' => 'BYN'] : false;
-		}
-	}
-
-	/** Локализации валюты: язык => поля; записи запоминаются. */
-	class CCurrencyLang
-	{
-		/** @var array<string, array<string, mixed>> */
-		public static array $rows = [];
-		public static int $writes = 0;
-
-		public static function GetByID(string $currency, string $lang): array|false
-		{
-			return static::$rows[$lang] ?? false;
-		}
-
-		public static function Update(string $currency, string $lang, array $fields): bool
-		{
-			static::$writes++;
-			static::$rows[$lang] = $fields + (static::$rows[$lang] ?? []);
-			return true;
-		}
-
-		public static function Add(array $fields): bool
-		{
-			static::$writes++;
-			static::$rows[$fields['LID']] = $fields;
-			return true;
-		}
-	}
-}
-
-namespace Bitrix\Main\Localization
-{
-	class LanguageTable
-	{
-		public static array $langs = ['ru', 'en'];
-
-		public static function getList(array $params): \Bitrix\Currency\Cursor
-		{
-			return new \Bitrix\Currency\Cursor(array_map(static fn(string $l): array => ['LID' => $l], static::$langs));
-		}
-	}
-}
-
-namespace
-{
 	use Bitrix\Main\Config\Option;
 	use Shef\Currency\Main\Sign;
+
+	$reset = static function(array $rows, string $mode, string $applied = ''): void {
+		Option::delete('shef.currency');
+		CCurrencyLang::$rows = $rows;
+		CCurrencyLang::$writes = 0;
+		Option::set('shef.currency', Sign::OPTION, $mode);
+		if($applied !== '')
+		{
+			Option::set('shef.currency', Sign::APPLIED, $applied);
+		}
+	};
 
 	Check::group('разбор настройки и формат');
 
 	Check::same('известные режимы', array_map([Sign::class, 'parseMode'], ['sign', 'br', 'code', 'keep']), ['sign', 'br', 'code', 'keep']);
-	Check::same('пустое, мусор, не строка — знак', array_map([Sign::class, 'parseMode'], ['', 'SIGN', 'html', null, 5]), ['sign', 'sign', 'sign', 'sign', 'sign']);
-	Check::same('умолчание совпадает с default_option.php', str_contains((string)file_get_contents(dirname(__DIR__).'/default_option.php'), "'DEF_sign' => '".Sign::DEFAULT_MODE."'"), true);
-	Check::same('знак — «BYN» в обёртке со шрифтом НБРБ', Sign::formatString('sign'), '# <span class="nbrb-icon">BYN</span>');
-	Check::same('Br и BYN — текстом, «не менять» — null', [Sign::formatString('br'), Sign::formatString('code'), Sign::formatString('keep')], ['# Br', '# BYN', null]);
-	Check::same('стили знака задают тот же класс', str_contains((string)file_get_contents(dirname(__DIR__).'/install/css/shef.currency/byn.css'), '.'.Sign::CLASS_NAME.' {'), true);
+	Check::same('пустое, мусор, не строка — «не менять»', array_map([Sign::class, 'parseMode'], ['', 'SIGN', 'html', null, 5]), ['keep', 'keep', 'keep', 'keep', 'keep']);
+	Check::same('умолчание совпадает с default_option.php', str_contains((string)file_get_contents($root.'/default_option.php'), "'DEF_sign' => '".Sign::DEFAULT_MODE."'"), true);
+	Check::same('знак и BYN — «# BYN» текстом, Br — «# Br», «не менять» — null', [Sign::formatString('sign'), Sign::formatString('code'), Sign::formatString('br'), Sign::formatString('keep')], ['# BYN', '# BYN', '# Br', null]);
+	foreach(['sign', 'br', 'code'] as $mode)
+	{
+		Check::same('в формате '.$mode.' нет разметки', strpbrk((string)Sign::formatString($mode), '<>&"'), false);
+	}
+	Check::same('стили знака задают класс, который ставит скрипт', [
+		str_contains((string)file_get_contents($root.'/install/css/shef.currency/byn.css'), '.'.Sign::CLASS_NAME.' {'),
+		str_contains((string)file_get_contents($root.'/install/js/shef.currency/byn.js'), "span.className = '".Sign::CLASS_NAME."'"),
+	], [true, true]);
 
 	Check::group('план: что писать и что запомнить');
 
-	Check::same('чужой формат запоминается, нет локализации — добавить', Sign::plan('sign', ['ru' => '# руб.', 'en' => null], []), [
-		'ru' => ['format' => '# <span class="nbrb-icon">BYN</span>', 'add' => false, 'keep' => '# руб.'],
-		'en' => ['format' => '# <span class="nbrb-icon">BYN</span>', 'add' => true, 'keep' => null],
+	Check::same('прежний запоминается любым, нет локализации — добавить', Sign::plan('sign', ['ru' => '# руб.', 'en' => null, 'be' => '# Br'], []), [
+		'ru' => ['format' => '# BYN', 'add' => false, 'keep' => '# руб.'],
+		'en' => ['format' => '# BYN', 'add' => true, 'keep' => '-'],
+		'be' => ['format' => '# BYN', 'add' => false, 'keep' => '# Br'],
 	]);
 	Check::same('уже так — ничего', Sign::plan('br', ['ru' => '# Br'], []), []);
-	Check::same('свой формат не запоминается как прежний', Sign::plan('code', ['ru' => '# Br'], [])['ru']['keep'], null);
-	Check::same('прежний уже сохранён — не перезаписывается', Sign::plan('sign', ['ru' => '# Bel'], ['ru' => '# руб.'])['ru']['keep'], null);
+	Check::same('прежний уже сохранён — не перезаписывается', Sign::plan('sign', ['ru' => '# Br'], ['ru' => '# руб.'])['ru']['keep'], null);
 	Check::same('«не менять» — пусто', Sign::plan('keep', ['ru' => '# руб.'], []), []);
+	Check::same('писать: смена режима — да, тот же — нет, «не менять» — нет, установка — да', [
+		Sign::needApply('sign', ''), Sign::needApply('sign', 'sign'), Sign::needApply('keep', 'sign'), Sign::needApply('sign', 'sign', true), Sign::needApply('keep', '', true),
+	], [true, false, false, true, false]);
 
 	Check::group('apply/restore на заглушках ядра');
 
-	CCurrencyLang::$rows = ['ru' => ['FORMAT_STRING' => '# руб.', 'FULL_NAME' => 'Белорусский рубль']];
-	Option::set('shef.currency', Sign::OPTION, 'sign');
+	$reset(['ru' => ['FORMAT_STRING' => '# Br']], 'sign');
 	Check::same('apply — успех', Sign::apply()->isSuccess(), true);
-	Check::same('ru — знак, исходный «# руб.» запомнен', [CCurrencyLang::$rows['ru']['FORMAT_STRING'], Option::get('shef.currency', 'SYS_prev_ru', '')], ['# <span class="nbrb-icon">BYN</span>', '# руб.']);
-	Check::same('en добавлен со знаком и разделителями', [CCurrencyLang::$rows['en']['FORMAT_STRING'], CCurrencyLang::$rows['en']['DEC_POINT']], ['# <span class="nbrb-icon">BYN</span>', ',']);
+	Check::same('ru — «# BYN», прежний «# Br» клиента запомнен, режим применён', [CCurrencyLang::$rows['ru']['FORMAT_STRING'], Option::get('shef.currency', 'SYS_prev_ru', ''), Option::get('shef.currency', Sign::APPLIED, '')], ['# BYN', '# Br', 'sign']);
+	Check::same('en добавлен с разделителями', [CCurrencyLang::$rows['en']['FORMAT_STRING'], CCurrencyLang::$rows['en']['DEC_POINT']], ['# BYN', ',']);
+
+	CCurrencyLang::$rows['ru']['FORMAT_STRING'] = '# руками';
 	$writes = CCurrencyLang::$writes;
 	Sign::apply();
-	Check::same('повторно — без записей', CCurrencyLang::$writes, $writes);
-	Sign::apply('br');
-	Check::same('смена на Br — прежний остаётся исходным', [CCurrencyLang::$rows['ru']['FORMAT_STRING'], Option::get('shef.currency', 'SYS_prev_ru', '')], ['# Br', '# руб.']);
+	Check::same('просмотр без смены режима — без записей, формат руками цел', [CCurrencyLang::$writes, CCurrencyLang::$rows['ru']['FORMAT_STRING']], [$writes, '# руками']);
 	Sign::restore();
-	Check::same('удаление: ru — исходный, en (прежнего не было) — «BYN»', [CCurrencyLang::$rows['ru']['FORMAT_STRING'], CCurrencyLang::$rows['en']['FORMAT_STRING']], ['# руб.', '# BYN']);
+	Check::same('удаление не трогает формат, поменянный руками', CCurrencyLang::$rows['ru']['FORMAT_STRING'], '# руками');
 
-	CCurrencyLang::$rows = ['ru' => ['FORMAT_STRING' => '# свой']];
+	$reset(['ru' => ['FORMAT_STRING' => '# руб.']], 'sign');
+	Sign::apply();
+	Option::set('shef.currency', Sign::OPTION, 'br');
+	Sign::apply();
+	Check::same('смена на Br — пишется, прежний остаётся исходным', [CCurrencyLang::$rows['ru']['FORMAT_STRING'], Option::get('shef.currency', 'SYS_prev_ru', '')], ['# Br', '# руб.']);
 	Sign::restore();
-	Check::same('удаление не трогает формат, поменянный руками после модуля', CCurrencyLang::$rows['ru']['FORMAT_STRING'], '# свой');
+	Check::same('удаление: ru — исходный «# руб.», en (не было) — как записал модуль', [CCurrencyLang::$rows['ru']['FORMAT_STRING'], CCurrencyLang::$rows['en']['FORMAT_STRING']], ['# руб.', '# Br']);
 
+	$reset(['ru' => ['FORMAT_STRING' => '# руб.']], 'keep');
+	Check::same('«не менять» — ничего, даже при установке', [Sign::apply(true)->isSuccess(), CCurrencyLang::$writes], [true, 0]);
+	Sign::restore();
+	Check::same('модуль не писал — удаление не трогает', CCurrencyLang::$rows['ru']['FORMAT_STRING'], '# руб.');
+
+	$reset(['ru' => ['FORMAT_STRING' => '# руб.']], 'sign');
 	CCurrency::$hasByn = false;
-	Check::same('нет BYN — ошибка, ничего не пишется', [Sign::apply('sign')->isSuccess(), CCurrencyLang::$rows['ru']['FORMAT_STRING']], [false, '# свой']);
+	Check::same('нет BYN — ошибка, ничего не пишется, режим не помечен применённым', [Sign::apply()->isSuccess(), CCurrencyLang::$writes, Option::get('shef.currency', Sign::APPLIED, '')], [false, 0, '']);
 	CCurrency::$hasByn = true;
 
-	Check::group('стили на страницах');
+	Check::group('страницы: стили и скрипт');
 
 	\Bitrix\Main\Page\Asset::$css = [];
+	\Bitrix\Main\Page\Asset::$js = [];
 	Option::set('shef.currency', Sign::OPTION, 'br');
 	Sign::onPrologHandler();
-	Check::same('Br — стили не нужны', \Bitrix\Main\Page\Asset::$css, []);
+	Check::same('Br — ничего не подключается', [\Bitrix\Main\Page\Asset::$css, \Bitrix\Main\Page\Asset::$js], [[], []]);
 	Option::set('shef.currency', Sign::OPTION, 'sign');
 	Sign::onPrologHandler();
-	Check::same('знак — стили со шрифтом', \Bitrix\Main\Page\Asset::$css, ['/bitrix/css/shef.currency/byn.css']);
+	Check::same('знак — стили со шрифтом и скрипт', [\Bitrix\Main\Page\Asset::$css, \Bitrix\Main\Page\Asset::$js], [['/bitrix/css/shef.currency/byn.css'], ['/bitrix/js/shef.currency/byn.js']]);
+
+	Check::group('обновление заменой файлов: обработчик и файлы');
+
+	\Bitrix\Main\EventManager::$registered = [];
+	$GLOBALS['copied'] = [];
+	if(!function_exists('CopyDirFiles'))
+	{
+		function CopyDirFiles(string $from, string $to, bool $rewrite = true, bool $recursive = false): bool
+		{
+			$GLOBALS['copied'][] = [$from, $to];
+			return true;
+		}
+	}
+	Sign::ensureInstalled($root, '/nonexistent-docroot');
+	Sign::ensureInstalled($root, '/nonexistent-docroot');
+	Check::same('обработчик main:OnProlog — один раз', array_map(static fn(array $r): string => $r[0].':'.$r[1].' -> '.$r[2], \Bitrix\Main\EventManager::$registered), ['main:OnProlog -> shef.currency']);
+	Check::same('файлов нет — стили и скрипт копируются', array_slice($GLOBALS['copied'], 0, 2), [[$root.'/install/css', '/nonexistent-docroot/bitrix/css'], [$root.'/install/js', '/nonexistent-docroot/bitrix/js']]);
 
 	Check::finish();
 }

@@ -107,15 +107,13 @@ Class shef_currency
 			// настроек, когда базовая валюта и настройки проверены. Не
 			// встал — поставит страница настроек у того, кто может их менять.
 			\Shef\Currency\Sync\Agent::buildAgentsEntity();
-			
-			// Обозначение BYN (2.1.0): по умолчанию — знак НБРБ; прежний формат запоминается
-			// и возвращается при удалении. Нет валюты BYN — запишет страница настроек позже.
-			\Shef\Currency\Main\Sign::apply();
 		}
 		catch(\Throwable $throwable)
 		{
 		
 		}
+		
+		$this->installSign();
 		
 		
 		return true;
@@ -150,15 +148,14 @@ Class shef_currency
 		 */
 		\CAgent::RemoveModuleAgents($this->MODULE_ID);
 		
-		// Формат BYN — назад, до удаления настроек: прежний лежит в них (SYS_prev_<язык>).
-		// Без модуля знак в формате — HTML без стилей, поэтому возвращаем прежний или «BYN».
+		// Формат BYN — назад, до удаления настроек: прежний лежит в них (SYS_prev_<язык>)
 		try
 		{
 			\Shef\Currency\Main\Sign::restore();
 		}
 		catch(\Throwable $throwable)
 		{
-		
+			$this->logSign('Формат BYN не возвращён при удалении: '.$throwable->getMessage());
 		}
 		
 		/**
@@ -184,6 +181,40 @@ Class shef_currency
 		return true;
 	}
 	// endregion ////
+	
+	/**
+	 * Знак белорусского рубля (2.1.0): новая установка — знак НБРБ (у портала, где формат ещё не
+	 * писал модуль); прежний формат запоминается. Обновление заменой файлов сюда не заходит, там
+	 * умолчание — «не менять». Нет валюты BYN — запишет страница настроек, когда выберут.
+	 */
+	private function installSign(): void
+	{
+		try
+		{
+			if(Config\Option::get($this->MODULE_ID, \Shef\Currency\Main\Sign::APPLIED, '') === '')
+			{
+				Config\Option::set($this->MODULE_ID, \Shef\Currency\Main\Sign::OPTION, \Shef\Currency\Main\Sign::INSTALL_MODE);
+			}
+			$result = \Shef\Currency\Main\Sign::apply(true);
+			if(!$result->isSuccess())
+			{
+				$this->logSign('Формат BYN при установке не записан: '.implode('; ', $result->getErrorMessages()));
+			}
+		}
+		catch(\Throwable $throwable)
+		{
+			$this->logSign('Формат BYN при установке не записан: '.$throwable->getMessage());
+		}
+	}
+	
+	/** Сбой знака — в журнал событий: установка и удаление из-за него не прерываются. */
+	private function logSign(string $message): void
+	{
+		if(class_exists(\CEventLog::class))
+		{
+			\CEventLog::Add(['SEVERITY' => 'WARNING', 'AUDIT_TYPE_ID' => 'SHEF_CURRENCY_SIGN', 'MODULE_ID' => $this->MODULE_ID, 'ITEM_ID' => 'BYN', 'DESCRIPTION' => $message]);
+		}
+	}
 	
 	// region LeftMenu ////
 	private function getLeftMenuList(): array

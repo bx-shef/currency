@@ -24,6 +24,7 @@ $root = dirname(__DIR__);
 
 require_once $root.'/tests/stub/autoload.php';
 require_once $root.'/tests/stub/shef.php';
+require_once $root.'/tests/stub/currencylang.php';
 require_once $root.'/tests/assert.php';
 
 use Bitrix\Main\Config\Option;
@@ -132,6 +133,35 @@ Check::same('агент курсов поставлен — выключенны
 	\Shef\InSync\Agents\Manager::$installed
 ), [['\Shef\Currency\Sync\Agent::process([]);', 'shef.currency', false]]);
 
+Check::group('знак BYN: установка ставит, удаление возвращает (2.1.0)');
+
+$module = $given();
+CCurrencyLang::$rows = ['ru' => ['FORMAT_STRING' => '# руб.']];
+$module->InstallDB();
+Check::same('новая установка — знак: формат «# BYN», прежний запомнен', [Option::get('shef.currency', 'DEF_sign', ''), CCurrencyLang::$rows['ru']['FORMAT_STRING'], Option::get('shef.currency', 'SYS_prev_ru', '')], ['sign', '# BYN', '# руб.']);
+$module->UnInstallDB();
+Check::same('удаление вернуло прежний и стёрло настройки (restore — до Option::delete)', [CCurrencyLang::$rows['ru']['FORMAT_STRING'], Option::get('shef.currency', 'SYS_prev_ru', 'нет')], ['# руб.', 'нет']);
+
+$module = $given();
+CCurrencyLang::$rows = ['ru' => ['FORMAT_STRING' => '# руб.']];
+$module->InstallDB();
+$module->UnInstallDB(['savedata' => 'Y']);
+Check::same('savedata = Y — формат тоже возвращён, прежний остаётся в настройках', [CCurrencyLang::$rows['ru']['FORMAT_STRING'], Option::get('shef.currency', 'SYS_prev_ru', '')], ['# руб.', '# руб.']);
+
+$module = $given();
+Option::set('shef.currency', 'SYS_applied', 'br');
+Option::set('shef.currency', 'DEF_sign', 'br');
+CCurrencyLang::$rows = ['ru' => ['FORMAT_STRING' => '# Br']];
+$module->InstallDB();
+Check::same('переустановка с сохранёнными настройками — выбор администратора не меняется', [Option::get('shef.currency', 'DEF_sign', ''), CCurrencyLang::$rows['ru']['FORMAT_STRING']], ['br', '# Br']);
+
+$module = $given();
+CCurrency::$hasByn = false;
+CEventLog::$added = [];
+Check::same('нет BYN — установка всё равно проходит', $module->InstallDB(), true);
+Check::same('причина — в журнале событий', array_map(static fn(array $e): string => $e['AUDIT_TYPE_ID'], CEventLog::$added), ['SHEF_CURRENCY_SIGN']);
+CCurrency::$hasByn = true;
+
 Check::group('удаление уносит настройки и агент модуля');
 
 $module = $given();
@@ -190,7 +220,7 @@ Check::group('установка файлов');
 
 $module = $given();
 Check::same('InstallFiles отработал', $module->InstallFiles(), true);
-Check::same('копируются стили знака BYN', array_map(static fn(array $c): array => [substr($c[0], -12), substr($c[1], -11)], CoreCalls::$copied), [['/install/css', '/bitrix/css']]);
+Check::same('копируются стили и скрипт знака BYN', array_map(static fn(array $c): array => [preg_replace('~^.*(/install/)~', '$1', $c[0]), preg_replace('~^.*(/bitrix/)~', '$1', $c[1])], CoreCalls::$copied), [['/install/css', '/bitrix/css'], ['/install/js', '/bitrix/js']]);
 Check::same('UnInstallFiles отработал', $module->UnInstallFiles(), true);
 
 Check::finish();

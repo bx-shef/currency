@@ -591,7 +591,15 @@ namespace Bitrix\Main
 
 			public function findEventHandlers(string $moduleId, string $eventType): array
 			{
-				return [];
+				$found = [];
+				foreach(static::$registered as $r)
+				{
+					if($r[0] === $moduleId && $r[1] === $eventType)
+					{
+						$found[] = ['TO_MODULE_ID' => $r[2], 'TO_CLASS' => $r[3], 'TO_METHOD' => $r[4]];
+					}
+				}
+				return $found;
 			}
 
 			public function registerEventHandler(string $fromModule, string $event, string $toModule, string $class, string $method, int $sort = 100): void
@@ -739,6 +747,15 @@ namespace Bitrix\Main\Page
 			public function addCss(string $path, ?bool $additional = null): bool
 			{
 				static::$css[] = $path;
+				return true;
+			}
+
+			/** @var string[] подключённые скрипты */
+			public static array $js = [];
+
+			public function addJs(string $path, ?bool $additional = null): bool
+			{
+				static::$js[] = $path;
 				return true;
 			}
 		}

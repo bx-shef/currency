@@ -67,14 +67,16 @@ Check::same(
 );
 Check::same('чужих namespace нет — свой даёт соглашение', $settings['registerNamespace']['value'], []);
 
-Check::group('installDir — только стили и шрифт знака BYN (2.1.0)');
+Check::group('installDir — только стили, шрифт и скрипт знака BYN (2.1.0)');
+Check::same('скрипт знака — по пути, который подключает Main\\\\Sign', is_file($root.'/install/js/shef.currency/byn.js') && str_contains((string)file_get_contents($root.'/lib/main/sign.php'), "JS = '/bitrix/js/shef.currency/byn.js'"), true);
 
 // Кнопку на странице курсов рисует обработчик события, страницу настроек — ядро. Раскладывается
 // одно: стили и шрифт знака белорусского рубля — каталог модуля браузеру закрыт.
-Check::same('installDir — install/css в /bitrix/css', $settings['installDir']['value'], [[
-	'type' => 'css', 'from' => '/install/css', 'to' => '/bitrix/css', 'customPathUnInstall' => [], 'isNeedUnInstall' => true,
-]]);
-Check::same('в install/ — установщик, стили знака и шаблон печатной формы', array_values(array_diff(scandir($root.'/install'), ['.', '..'])), ['css', 'docgen', 'index.php', 'version.php']);
+Check::same('installDir — install/css в /bitrix/css, install/js в /bitrix/js', $settings['installDir']['value'], [
+	['type' => 'css', 'from' => '/install/css', 'to' => '/bitrix/css', 'customPathUnInstall' => [], 'isNeedUnInstall' => true],
+	['type' => 'js', 'from' => '/install/js', 'to' => '/bitrix/js', 'customPathUnInstall' => [], 'isNeedUnInstall' => true],
+]);
+Check::same('в install/ — установщик, стили знака и шаблон печатной формы', array_values(array_diff(scandir($root.'/install'), ['.', '..'])), ['css', 'docgen', 'index.php', 'js', 'version.php']);
 Check::same('стили знака — по пути, который подключает Main\\Sign', is_file($root.'/install/css/shef.currency/byn.css') && str_contains((string)file_get_contents($root.'/lib/main/sign.php'), "CSS = '/bitrix/css/shef.currency/byn.css'"), true);
 foreach(['nbrb.woff2', 'nbrb.woff', 'nbrb.ttf'] as $font)
 {

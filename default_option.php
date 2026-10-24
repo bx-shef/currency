@@ -7,5 +7,6 @@
 $shef_currency_default_option = [
 	'DEF_sizeChange' => '0',
 	'DEF_factor' => '1',
-	'DEF_sign' => 'sign',
+	// «не менять»: модуль, обновлённый заменой файлов, формат BYN не трогает; новая установка — знак
+	'DEF_sign' => 'keep',
 ];
