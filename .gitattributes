@@ -14,4 +14,5 @@
 /docs/			export-ignore
 /examples/		export-ignore
 /build.sh		export-ignore
+/tools/			export-ignore
 /tests/			export-ignore

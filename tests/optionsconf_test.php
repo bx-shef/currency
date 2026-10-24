@@ -61,7 +61,11 @@ Check::same('у вкладки есть название', $tabs[0]->getName(), 
 
 $options = $byCode($tabs[0]);
 
-Check::same('опции по порядку', array_keys($options), ['DEF_TEXT_BASE_CURRENCY', 'sizeChange', 'factor', 'Agent']);
+Check::same('опции по порядку', array_keys($options), ['DEF_TEXT_BASE_CURRENCY', 'sizeChange', 'factor', 'sign', 'Agent']);
+
+Check::group('обозначение BYN (2.1.0)');
+
+Check::same('варианты — знак, Br, BYN, не менять; по умолчанию знак, как в default_option.php', [array_keys($options['sign']->list), $options['sign']->getDefValue(), array_filter($options['sign']->list, static fn($v): bool => !is_string($v) || $v === '')], [['sign', 'br', 'code', 'keep'], 'sign', []]);
 
 Check::group('базовая валюта');
 

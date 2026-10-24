@@ -165,15 +165,16 @@ $describe = static fn(array $call): string => $call[0].':'.$call[1].' -> '.ltrim
 $handlers = [
 	'main:OnAdminListDisplay -> Shef\\Currency\\Sync\\Events::onAdminListDisplayHandler',
 	'main:OnBeforeProlog -> Shef\\Currency\\Sync\\Events::onBeforePrologHandler',
+	'main:OnProlog -> Shef\\Currency\\Main\\Sign::onPrologHandler',
 ];
 
 $module = $given();
 $module->InstallEvents();
-Check::same('ставятся два', array_map($describe, EventManager::$registered), $handlers);
+Check::same('ставятся три (два из 1.x и знак BYN)', array_map($describe, EventManager::$registered), $handlers);
 
 $module = $given();
 $module->UnInstallEvents();
-Check::same('снимаются те же два', array_map($describe, EventManager::$unregistered), $handlers);
+Check::same('снимаются те же три', array_map($describe, EventManager::$unregistered), $handlers);
 
 Check::group('зависимости');
 
@@ -189,7 +190,7 @@ Check::group('установка файлов');
 
 $module = $given();
 Check::same('InstallFiles отработал', $module->InstallFiles(), true);
-Check::same('копировать нечего', CoreCalls::$copied, []);
+Check::same('копируются стили знака BYN', array_map(static fn(array $c): array => [substr($c[0], -12), substr($c[1], -11)], CoreCalls::$copied), [['/install/css', '/bitrix/css']]);
 Check::same('UnInstallFiles отработал', $module->UnInstallFiles(), true);
 
 Check::finish();

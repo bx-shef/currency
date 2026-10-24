@@ -70,7 +70,26 @@ $options->addTab(
 				->setStep(0.01)
 				->setDefValue((string)Constants::DEFAULT_FACTOR)
 		)
+		->addOption(
+			(new Options\Enum('sign'))
+				->setTitle(Loc::getMessage($options->moduleId.'_TAB_DEF_sign'))
+				->setDescription(Loc::getMessage($options->moduleId.'_TAB_DEF_sign_descr'))
+				->setList([
+					\Shef\Currency\Main\Sign::MODE_SIGN => Loc::getMessage($options->moduleId.'_TAB_DEF_sign_sign'),
+					\Shef\Currency\Main\Sign::MODE_BR => Loc::getMessage($options->moduleId.'_TAB_DEF_sign_br'),
+					\Shef\Currency\Main\Sign::MODE_CODE => Loc::getMessage($options->moduleId.'_TAB_DEF_sign_code'),
+					\Shef\Currency\Main\Sign::MODE_KEEP => Loc::getMessage($options->moduleId.'_TAB_DEF_sign_keep'),
+				])
+				->setDefValue(\Shef\Currency\Main\Sign::DEFAULT_MODE)
+		)
 );
+
+// Формат BYN — по сохранённой настройке: страница открывается и после «Сохранить», так что
+// выбор применяется сразу. Пишет только тот, кто может менять настройки; без изменений — ничего.
+if(\Shef\Options\Main\Utils::getCMainApplication()?->GetGroupRight($options->moduleId) >= 'W')
+{
+	\Shef\Currency\Main\Sign::apply();
+}
 
 // Агента ставит установщик. Страница ставит его, только если его нет, —
 // и только тому, кто может менять настройки модуля: просмотр страницы с

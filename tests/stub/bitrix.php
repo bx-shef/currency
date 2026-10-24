@@ -732,6 +732,15 @@ namespace Bitrix\Main\Page
 			{
 				static::$strings[] = $string;
 			}
+
+			/** @var string[] подключённые стили */
+			public static array $css = [];
+
+			public function addCss(string $path, ?bool $additional = null): bool
+			{
+				static::$css[] = $path;
+				return true;
+			}
 		}
 	}
 }

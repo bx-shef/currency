@@ -107,6 +107,10 @@ Class shef_currency
 			// настроек, когда базовая валюта и настройки проверены. Не
 			// встал — поставит страница настроек у того, кто может их менять.
 			\Shef\Currency\Sync\Agent::buildAgentsEntity();
+			
+			// Обозначение BYN (2.1.0): по умолчанию — знак НБРБ; прежний формат запоминается
+			// и возвращается при удалении. Нет валюты BYN — запишет страница настроек позже.
+			\Shef\Currency\Main\Sign::apply();
 		}
 		catch(\Throwable $throwable)
 		{
@@ -145,6 +149,17 @@ Class shef_currency
 		 * not found».
 		 */
 		\CAgent::RemoveModuleAgents($this->MODULE_ID);
+		
+		// Формат BYN — назад, до удаления настроек: прежний лежит в них (SYS_prev_<язык>).
+		// Без модуля знак в формате — HTML без стилей, поэтому возвращаем прежний или «BYN».
+		try
+		{
+			\Shef\Currency\Main\Sign::restore();
+		}
+		catch(\Throwable $throwable)
+		{
+		
+		}
 		
 		/**
 		 * Настройки уходят вместе с модулем.
