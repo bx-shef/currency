@@ -21,6 +21,7 @@ $root = dirname(__DIR__);
 
 require_once $root.'/tests/stub/autoload.php';
 require_once $root.'/tests/stub/shef.php';
+require_once $root.'/tests/stub/currencylang.php';
 require_once $root.'/tests/assert.php';
 
 use Bitrix\Main\Localization\Loc;
@@ -61,7 +62,11 @@ Check::same('у вкладки есть название', $tabs[0]->getName(), 
 
 $options = $byCode($tabs[0]);
 
-Check::same('опции по порядку', array_keys($options), ['DEF_TEXT_BASE_CURRENCY', 'sizeChange', 'factor', 'Agent']);
+Check::same('опции по порядку', array_keys($options), ['DEF_TEXT_BASE_CURRENCY', 'sizeChange', 'factor', 'sign', 'Agent']);
+
+Check::group('обозначение BYN (2.1.0)');
+
+Check::same('варианты — знак, Br, BYN, не менять; по умолчанию «не менять», как в default_option.php', [array_keys($options['sign']->list), $options['sign']->getDefValue(), array_filter($options['sign']->list, static fn($v): bool => !is_string($v) || $v === '')], [['sign', 'br', 'code', 'keep'], 'keep', []]);
 
 Check::group('базовая валюта');
 
@@ -116,7 +121,25 @@ Agents\Manager::$installed = [];
 Agents\Entity::$agents = [];
 $reflection = new ReflectionProperty(\Shef\Currency\Sync\Agent::class, 'agentEntity');
 $reflection->setValue(null, null);
+Check::group('знак BYN со страницы настроек');
+
+Bitrix\Main\Config\Option::set('shef.currency', 'DEF_sign', 'br');
+CCurrencyLang::$rows = ['ru' => ['FORMAT_STRING' => '# руб.']];
+CCurrencyLang::$writes = 0;
+$GLOBALS['APPLICATION']->rights = ['shef.currency' => 'W'];
+$build();
+Check::same('с «W» — смена настройки применяется', CCurrencyLang::$rows['ru']['FORMAT_STRING'], '# Br');
+CCurrencyLang::$rows['ru']['FORMAT_STRING'] = '# руками';
+$writes = CCurrencyLang::$writes;
+$build();
+Check::same('повторный просмотр — без записей, правка руками цела', [CCurrencyLang::$writes, CCurrencyLang::$rows['ru']['FORMAT_STRING']], [$writes, '# руками']);
+Bitrix\Main\Config\Option::set('shef.currency', 'DEF_sign', 'code');
 $GLOBALS['APPLICATION']->rights = ['shef.currency' => 'R'];
+$build();
+Check::same('с «R» — ничего не пишется', CCurrencyLang::$rows['ru']['FORMAT_STRING'], '# руками');
+
+$GLOBALS['APPLICATION']->rights = ['shef.currency' => 'R'];
+\Shef\InSync\Agents\Manager::$installed = [];
 $readOnly = $byCode($build()[0]);
 Check::same('с правом «R» — строка агента есть, а агент не поставлен', [
 	$readOnly['Agent'] instanceof \Shef\InSync\Main\Options\Agent\Option,

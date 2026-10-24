@@ -1,0 +1,28 @@
+/*
+ * Знак белорусского рубля (НБРБ, постановление № 25 от 27.01.2026) — shef.currency.
+ * Шрифт "nbrb" НБРБ: лигатура «BYN» → знак (U+E901). Без шрифта остаётся текст «BYN».
+ * Подключает Main\Sign::onPrologHandler(), когда обозначение BYN — «знак»; «BYN» после суммы
+ * оборачивает /bitrix/js/shef.currency/byn.js.
+ */
+@font-face {
+	font-family: "nbrb";
+	src: url("nbrb.woff2") format("woff2"), url("nbrb.woff") format("woff"), url("nbrb.ttf") format("truetype");
+	font-display: block;
+	unicode-range: U+E901, U+42, U+59, U+4E;
+}
+
+.nbrb-icon {
+	font-family: "nbrb" !important;
+	font-style: normal;
+	font-weight: normal;
+	font-variant: normal;
+	text-transform: none;
+	letter-spacing: normal;
+	line-height: 1;
+	/* глиф НБРБ ~0,57 em — мельче цифр большинства шрифтов */
+	font-size: 1.15em;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+	font-feature-settings: "liga";
+	font-variant-ligatures: common-ligatures discretionary-ligatures;
+}

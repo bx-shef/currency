@@ -67,12 +67,21 @@ Check::same(
 );
 Check::same('чужих namespace нет — свой даёт соглашение', $settings['registerNamespace']['value'], []);
 
-Check::group('installDir — установщик ничего не копирует');
+Check::group('installDir — только стили, шрифт и скрипт знака BYN (2.1.0)');
+Check::same('скрипт знака — по пути, который подключает Main\\\\Sign', is_file($root.'/install/js/shef.currency/byn.js') && str_contains((string)file_get_contents($root.'/lib/main/sign.php'), "JS = '/bitrix/js/shef.currency/byn.js'"), true);
 
-// Кнопку на странице курсов рисует обработчик события, страницу настроек —
-// ядро: раскладывать нечего. Каталог появится — его надо описать здесь.
-Check::same('installDir пуст', $settings['installDir']['value'], []);
-Check::same('в install/ только установщик', array_values(array_diff(scandir($root.'/install'), ['.', '..'])), ['index.php', 'version.php']);
+// Кнопку на странице курсов рисует обработчик события, страницу настроек — ядро. Раскладывается
+// одно: стили и шрифт знака белорусского рубля — каталог модуля браузеру закрыт.
+Check::same('installDir — install/css в /bitrix/css, install/js в /bitrix/js', $settings['installDir']['value'], [
+	['type' => 'css', 'from' => '/install/css', 'to' => '/bitrix/css', 'customPathUnInstall' => [], 'isNeedUnInstall' => true],
+	['type' => 'js', 'from' => '/install/js', 'to' => '/bitrix/js', 'customPathUnInstall' => [], 'isNeedUnInstall' => true],
+]);
+Check::same('в install/ — установщик, стили знака и шаблон печатной формы', array_values(array_diff(scandir($root.'/install'), ['.', '..'])), ['css', 'docgen', 'index.php', 'js', 'version.php']);
+Check::same('стили знака — по пути, который подключает Main\\Sign', is_file($root.'/install/css/shef.currency/byn.css') && str_contains((string)file_get_contents($root.'/lib/main/sign.php'), "CSS = '/bitrix/css/shef.currency/byn.css'"), true);
+foreach(['nbrb.woff2', 'nbrb.woff', 'nbrb.ttf'] as $font)
+{
+	Check::same('шрифт '.$font.' рядом со стилями и назван в них', is_file($root.'/install/css/shef.currency/'.$font) && str_contains((string)file_get_contents($root.'/install/css/shef.currency/byn.css'), 'url("'.$font.'")'), true);
+}
 
 Check::group('installEvents — обработчики существуют');
 
@@ -97,7 +106,7 @@ foreach($settings['installEvents']['value'] as $i => $event)
 	}
 }
 
-Check::same('обработчиков — два, как в 1.x', count($settings['installEvents']['value']), 2);
+Check::same('обработчиков — три: два из 1.x и знак BYN (2.1.0)', count($settings['installEvents']['value']), 3);
 Check::same('каждый обработчик — существующий метод', $brokenHandlers, []);
 
 $fromModules = array_unique(array_map(static fn(array $event): string => $event['from']['module'], $settings['installEvents']['value']));

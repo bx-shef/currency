@@ -144,6 +144,18 @@ namespace Shef\Options\Main\Options
 		}
 	}
 
+	class Enum extends AOption
+	{
+		/** @var array<string, string> */
+		public array $list = [];
+
+		public function setList(array $value): static
+		{
+			$this->list = $value;
+			return $this;
+		}
+	}
+
 	class Tab
 	{
 		protected string $name = '';
