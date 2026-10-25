@@ -1,16 +1,16 @@
 [
  {
-  "input": "я закончил задачу по навыку shef-new-agent, в нём не было про интервал в секундах — запиши замечание",
+  "input": "задача по навыку shef-* сделана, заверши работу и оставь отзыв",
   "expected": "shef-feedback"
  },
  {
-  "input": "запиши отзыв для авторов: навык shef-new-component противоречит коду AComponent",
+  "input": "оставь отзыв о навыке, которым пользовался в этой задаче",
   "expected": "shef-feedback"
  },
  {
   "input": "сделай агент импорта прайса раз в час",
-  "expected": "shef-new-agent",
-  "notes": "сосед"
+  "expected": "<none>",
+  "notes": "сама задача, не отзыв после неё; в полном наборе — shef-new-import/shef-new-agent"
  },
  {
   "input": "напиши README для модуля",

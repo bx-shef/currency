@@ -41,7 +41,7 @@ public function InstallFiles(): bool
     CopyDirFiles(
         __DIR__ . '/components',
         $_SERVER['DOCUMENT_ROOT'] . '/local/components',
-        true, true
+        true, true   // перезапись: правку проекта поверх компонента затрёт
     );
     return true;
 }

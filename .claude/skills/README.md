@@ -1,6 +1,7 @@
 # Навыки линейки shef.*
 
-Каталог-источник — [bx-shef/options](https://github.com/bx-shef/options),
+Источник — [bx-shef/skills](https://github.com/bx-shef/skills) (каталог `skills/`, коммит — в `SOURCE`; обновить — `update.sh`). Раньше —
+[bx-shef/options](https://github.com/bx-shef/options),
 `.claude/skills/`. В остальные репозитории линейки навыки **раскладываются**
 скриптом, а не копируются руками.
 
@@ -193,7 +194,7 @@ not found`, фатал в агенте.
 
 ```yaml
 - name: Навыки не отстали от источника
-  run: .claude/skills/sync.sh --check https://raw.githubusercontent.com/bx-shef/options/main/.claude/skills/MANIFEST
+  run: .claude/skills/update.sh --verify
 ```
 
 Без сети достаточно `--check` без аргумента: он поймает правку копии, но не
