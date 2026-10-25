@@ -119,15 +119,15 @@ write_manifest()
 	{
 		echo '# Навыки линейки shef.*'
 		echo '#'
-		echo '# Источник: https://github.com/bx-shef/options, каталог .claude/skills/'
+		echo '# Источник: https://github.com/bx-shef/skills, каталог skills/ (коммит — в SOURCE)'
 		echo '# Здесь — копия. Правят навыки ТОЛЬКО в источнике, сюда их раскладывает'
-		echo '# sync.sh --to. Правка копии на месте будет затёрта следующей раскладкой,'
+		echo '# update.sh. Правка копии на месте будет затёрта следующей раскладкой,'
 		echo '# а до неё — поймана проверкой.'
 		echo '#'
 		echo '#   .claude/skills/sync.sh --check            целостность копии'
 		echo '#   .claude/skills/sync.sh --check <источник> сверка с источником'
 		echo '#'
-		echo '# Пересобрать в источнике: .claude/skills/sync.sh --manifest'
+		echo '# Обновить: .claude/skills/update.sh; сверить: update.sh --verify'
 		echo '#'
 		current_lines
 	} > "$tmp"

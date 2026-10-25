@@ -133,7 +133,7 @@ Namespace обязан соответствовать каталогу в `lib/`
 
 ```php
 return [
-    '-prefilters' => [ActionFilter\Csrf::class],           // убрать
+    '-prefilters' => [ActionFilter\Authentication::class], // убрать (csrf не снимать без причины)
     '+prefilters' => [new ActionFilter\CloseSession()],    // добавить
 ];
 ```
