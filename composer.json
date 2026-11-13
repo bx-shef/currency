@@ -2,7 +2,7 @@
 	"name": "bxshef/currency",
 	"description": "Битрикс24 (коробка) и БУС: курсы валют НБ РБ в модуль «Валюты» — агент раз в сутки и кнопка на странице курсов",
 	"type": "bitrix-module",
-	"license": "MIT",
+	"license": "proprietary",
 	"keywords": [
 		"bitrix",
 		"Bitrix24",

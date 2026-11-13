@@ -1,7 +1,7 @@
 <?php
 $MESS['shef.currency_MODULE_NAME'] = '[SH] Валюты НБРБ';
 $MESS['shef.currency_MODULE_DESC'] = 'Курсы валют Национального банка Республики Беларусь в модуль «Валюты» Битрикс24 | БУС: агент раз в сутки и кнопка на странице курсов.';
-$MESS['shef.currency_PARTNER_NAME'] = 'ИП Шевчик И.С.';
+$MESS['shef.currency_PARTNER_NAME'] = 'ООО «БэИксШефБай»';
 $MESS['shef.currency_PARTNER_URI'] = 'https://bx-shef.by';
 
 $MESS['SH_MOD_BACK'] = 'К списку модулей';

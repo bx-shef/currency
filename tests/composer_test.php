@@ -30,8 +30,8 @@ Check::same('composer.json разобран', is_array($composer), true);
 Check::same('имя', $composer['name'] ?? null, 'bxshef/currency');
 Check::same('тип', $composer['type'] ?? null, 'bitrix-module');
 Check::same('installer-name — id модуля', $composer['extra']['installer-name'] ?? null, 'shef.currency');
-Check::same('лицензия в тон LICENSE', $composer['license'] ?? null, 'MIT');
-Check::same('LICENSE — MIT', str_starts_with((string)file_get_contents($root.'/LICENSE'), 'MIT License'), true);
+Check::same('лицензия в тон LICENSE', $composer['license'] ?? null, 'proprietary');
+Check::same('LICENSE — правообладатель ООО «БэИксШефБай»', str_contains((string)file_get_contents($root.'/LICENSE'), 'ООО «БэИксШефБай»'), true);
 
 Check::group('зависимости');
 
