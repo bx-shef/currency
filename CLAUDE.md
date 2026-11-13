@@ -167,8 +167,8 @@ JSON, другой разбор.
 **Документация живёт в репозитории.** В поставке — только README, ссылки из
 него на GitHub.
 
-**Composer — `bxshef/currency`, тип `bitrix-module`, лицензия MIT**
-(подтверждено владельцем 2026-09-29) вместо `shef/currency` +
+**Composer — `bxshef/currency`, тип `bitrix-module`, лицензия — собственная, права у ООО «БэИксШефБай»**
+(тип и имя подтверждены владельцем 2026-09-29) вместо `shef/currency` +
 `bitrix-d7-module` + proprietary. Так устроена вся линейка (см. CLAUDE.md
 shef.options).
 
